@@ -271,7 +271,8 @@ a.card:hover .card-target {
   margin: 2em 0;
 }
 
-.post figure img {
+.post figure img,
+.post figure video {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
