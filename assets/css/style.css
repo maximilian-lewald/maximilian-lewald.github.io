@@ -1,0 +1,308 @@
+/* ---------- Font ---------- */
+
+/* JetBrains Mono (SIL OFL 1.1, see ../fonts/OFL.txt), variable weight,
+   subset to Latin characters. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/jetbrains-mono.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------- Design tokens ---------- */
+
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f1f2f4;
+  --text: #1a1d21;
+  --text-dim: #6b7280;
+  --border: #e5e7eb;
+  --accent: #4f8ef7;
+  --shadow: 0 1px 3px rgba(0, 0, 0, .06), 0 4px 16px rgba(0, 0, 0, .05);
+  --radius: 26px;
+  --radius-sm: 18px;
+
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1f2630;
+    --text: #e6e8eb;
+    --text-dim: #8b949e;
+    --border: #262d37;
+    --accent: #6ba3f8;
+    --shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  }
+}
+
+/* ---------- Base ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  line-height: 1.55;
+}
+
+img,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Rounded link buttons: profile links and links inside posts. */
+.pill {
+  display: inline-block;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 13.5px;
+  text-decoration: none;
+  transition: color .15s, border-color .15s;
+}
+
+.pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- Start page ---------- */
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) 20px calc(env(safe-area-inset-bottom) + 80px);
+}
+
+.profile {
+  padding: 72px 0 52px;
+  text-align: center;
+}
+
+.avatar {
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 20px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
+.profile h1 {
+  margin: 0 0 22px;
+  font-size: clamp(26px, 6vw, 36px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- Cards ---------- */
+
+.feed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  gap: 18px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color .15s, transform .15s;
+}
+
+a.card:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  transform: translateY(-2px);
+}
+
+.card-media {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px 18px;
+}
+
+.tag {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+  line-height: 1.35;
+}
+
+.card-text {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+/* Tells the visitor where the card leads: "read more →" stays on this site,
+   "domain ↗" opens another one. */
+.card-target {
+  margin-top: auto;
+  padding-top: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  transition: color .15s;
+}
+
+a.card:hover .card-target {
+  color: var(--accent);
+}
+
+/* ---------- Post pages ---------- */
+
+.post {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 40px) 20px calc(env(safe-area-inset-bottom) + 96px);
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 40px;
+  color: var(--text-dim);
+  font-size: 14px;
+  text-decoration: none;
+  transition: color .15s;
+}
+
+.back:hover {
+  color: var(--accent);
+}
+
+.post h1 {
+  margin: 8px 0 28px;
+  font-size: clamp(28px, 6vw, 38px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+}
+
+.post h2 {
+  margin: 2em 0 .6em;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+.post p,
+.post ul,
+.post ol {
+  margin: 0 0 1.2em;
+  font-size: 15.5px;
+  line-height: 1.75;
+}
+
+.post p a:not(.pill),
+.post li a:not(.pill) {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+.post-cover {
+  width: 100%;
+  margin-bottom: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.post figure {
+  margin: 2em 0;
+}
+
+.post figure img {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.post figcaption {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Browsers give code its own monospace font; keep ours. */
+.post code,
+.post pre {
+  font-family: inherit;
+  font-size: .9em;
+}
+
+.post pre {
+  overflow-x: auto;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  line-height: 1.5;
+}
+
+/* ---------- Motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  a.card:hover {
+    transform: none;
+  }
+}
