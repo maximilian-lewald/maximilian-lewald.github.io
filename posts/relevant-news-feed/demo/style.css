@@ -1,0 +1,748 @@
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f1f2f4;
+  --text: #1a1d21;
+  --text-dim: #6b7280;
+  --border: #e5e7eb;
+  --accent: #4f8ef7;
+  --like: #34a56f;
+  --dislike: #d16060;
+  --hot: #d97706;       /* bedeutende Stories: warmes Bernstein, hell wie dunkel lesbar */
+  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+  --radius: 26px;        /* Karten/Kacheln — großzügig gerundet, iOS-nah */
+  --radius-sm: 18px;     /* kleinere Flächen */
+  /* Safe-Area-Insets als Variablen: werden auch in die eingebettete Karte
+     durchgereicht (env() ist in iOS-iframes unzuverlässig) */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1f2630;
+    --text: #e6e8eb;
+    --text-dim: #8b949e;
+    --border: #262d37;
+    --accent: #6ba3f8;
+    --like: #4cc38a;
+    --dislike: #e5787d;
+    --hot: #f59e0b;
+    --shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+  padding-bottom: env(safe-area-inset-bottom);
+  /* Am oberen Rand gehört die Zieh-Geste uns (Pull-to-Refresh), nicht dem Browser:
+     unterdrückt Chromes eigenes Neuladen und die Scroll-Weitergabe nach außen. */
+  overscroll-behavior-y: contain;
+}
+
+/* ---------- Pull-to-Refresh (Feed) ---------- */
+/* Sitzt über dem Inhalt und wird per translateY vom Rand hereingezogen. Die Geste steuert
+   Weg, Deckkraft, Größe und den Füllstand des Rings (siehe ptrZeichnen in app.js): der
+   Ring ist der Fortschrittsbalken der Geste — voll heißt „loslassen lädt".
+   display:grid hebt das hidden-Attribut aus dem HTML auf — siehe dort. */
+#ptr {
+  position: fixed; z-index: 25; top: calc(var(--sat) + 8px); left: 50%;
+  width: 40px; height: 40px; margin-left: -20px;
+  display: grid; place-items: center; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+  opacity: 0; transform: translateY(-60px);
+  pointer-events: none;
+}
+#ptr svg { width: 40px; height: 40px; display: block; }
+.ptr-spur { fill: none; stroke: var(--border); stroke-width: 2.5; }
+/* Kreisumfang 2πr = 87,96 bei r = 14 — derselbe Wert steht als PTR_UMFANG in app.js. */
+.ptr-bogen {
+  fill: none; stroke: var(--text-dim); stroke-width: 2.5; stroke-linecap: round;
+  stroke-dasharray: 88; stroke-dashoffset: 88;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+  transition: stroke .2s;
+}
+.ptr-pfeil {
+  fill: none; stroke: var(--text-dim); stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+  transform-origin: 50% 50%; transition: stroke .2s;
+}
+/* Nur beim Loslassen animiert — am Finger müssen Indikator und Inhalt ohne
+   Verzögerung folgen. */
+#ptr.glatt { transition: transform .3s cubic-bezier(.2,.9,.3,1), opacity .3s; }
+main.glatt { transition: transform .3s cubic-bezier(.2,.9,.3,1); }
+#ptr.bereit { border-color: var(--accent); }
+#ptr.bereit .ptr-bogen, #ptr.bereit .ptr-pfeil { stroke: var(--accent); }
+/* Der Quittungsimpuls beim Überschreiten der Auslöseschwelle. Er sitzt auf dem SVG, nicht
+   auf #ptr: dessen transform schreibt die Geste bei jedem Frame neu. */
+#ptr.bereit svg { animation: ptr-puls .34s cubic-bezier(.34,1.56,.64,1); }
+@keyframes ptr-puls { 0% { transform: scale(1); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
+/* Während des Ladens wird aus dem vollen Ring ein umlaufender Bogen. */
+#ptr.laedt .ptr-bogen {
+  stroke: var(--accent); stroke-dasharray: 24 64;
+  animation: ptr-dreht .9s linear infinite;
+}
+@keyframes ptr-dreht { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #ptr.bereit svg { animation: none; }
+  #ptr.laedt .ptr-bogen { animation-duration: 1.8s; }
+}
+
+/* ---------- Tab bar (desktop: floating top pill · mobile: fixed bottom bar) ---------- */
+#tabbar {
+  position: fixed; z-index: 30;
+  top: calc(env(safe-area-inset-top) + 12px); left: 50%; transform: translateX(-50%);
+  display: flex; gap: 2px; padding: 5px; border-radius: 99px;
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+#tabbar a {
+  display: flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 99px;
+  color: var(--text-dim); text-decoration: none; font-size: 14px; font-weight: 550;
+  white-space: nowrap; -webkit-tap-highlight-color: transparent;
+  transition: color .15s, background .15s, transform .1s;
+}
+#tabbar a:hover { color: var(--text); }
+#tabbar a.active { color: var(--text); background: var(--surface-2); }
+#tabbar a:active { transform: scale(.94); }
+.tab-icon { display: inline-flex; }
+.tab-icon svg { width: 18px; height: 18px; display: block; }
+
+main { max-width: 1200px; margin: 0 auto; padding: 82px 20px 60px; }
+
+@media (max-width: 720px) {
+  /* Gleiche schwebende Pille wie am Desktop — nur unten mittig statt oben.
+     Fester Abstand über der Home-Indicator-Zone: kein Springen, kein Leerraum. */
+  #tabbar {
+    top: auto; bottom: calc(env(safe-area-inset-bottom) + 10px);
+    left: 50%; right: auto; transform: translateX(-50%);
+    max-width: calc(100vw - 20px);
+  }
+  #tabbar { padding: 6px; }
+  #tabbar a { padding: 12px 11px; font-size: 13px; gap: 6px; }
+  .tab-icon svg { width: 21px; height: 21px; }
+  main {
+    padding: calc(env(safe-area-inset-top) + 14px) 15px
+             calc(env(safe-area-inset-bottom) + 96px);
+  }
+}
+
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px;
+}
+.toolbar select, .toolbar input[type="search"] {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 7px 12px; font-size: 14px; font-family: inherit; outline: none;
+}
+.toolbar input[type="search"] { flex: 1; min-width: 140px; }
+.toolbar input:focus, .toolbar select:focus { border-color: var(--accent); }
+.toolbar .spacer { flex: 1; }
+.hint { color: var(--text-dim); font-size: 13.5px; }
+
+.grid {
+  display: grid; gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+}
+@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  animation: rise .3s ease both;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+.card img.hero {
+  width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block;
+  background: var(--surface-2);
+}
+.card-body { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.card h2 { font-size: 17px; font-weight: 650; letter-spacing: -.01em; line-height: 1.35; }
+.card .summary { font-size: 14.5px; color: var(--text); opacity: .92; }
+.card .summary.clamp {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card .teaser { font-size: 14px; color: var(--text-dim); }
+.card-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--text-dim);
+}
+.score-pill {
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2); border-radius: 99px; padding: 1px 8px;
+}
+.premium-pill { color: #c9a227; }
+
+/* Rubrik-Tag auf der Karte: farbige Umrandung, Farbe kommt als --tc vom Markup */
+.topic-tag {
+  border: 1px solid var(--tc); color: var(--tc);
+  border-radius: 99px; padding: 0 8px; line-height: 18px;
+  font-size: 11.5px; white-space: nowrap;
+}
+
+/* „Warum sehe ich das?": die Score-Pille ist ein Knopf, das Panel steht unter der
+   Meta-Zeile und listet die ähnlichsten bewerteten Artikel. */
+.score-pill.why-knopf { border: 0; font: inherit; color: inherit; cursor: pointer; }
+/* Die Demo liefert keine Bewertungen mit, also auch kein Warum. */
+[data-demo] .score-pill.why-knopf { pointer-events: none; }
+.why-panel {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 10px; display: grid; gap: 7px; font-size: 12.5px;
+}
+.why-panel[hidden] { display: none; }
+.why-kopf {
+  color: var(--text-dim); font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.why-laedt { color: var(--text-dim); }
+.why-zeile {
+  display: flex; gap: 8px; align-items: flex-start;
+  color: var(--text); text-decoration: none;
+}
+.why-daumen { flex: none; margin-top: 1px; }
+.why-daumen svg { width: 14px; height: 14px; display: block; }
+.why-zeile.like .why-daumen { color: var(--like); }
+.why-zeile.dislike .why-daumen { color: var(--dislike); }
+.why-quelle { display: block; color: var(--text-dim); font-size: 11.5px; margin-top: 1px; }
+
+/* Filterleiste am Feed-Anfang: Symbol-Knopf, darunter das aufklappbare Rubriken-Panel */
+.feed-filter { margin: 2px 0 10px; }
+.demo-hinweis {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px 16px; margin: 2px 0 12px; font-size: 13.5px; line-height: 1.5; color: var(--text-dim);
+}
+.demo-hinweis b { color: var(--text); }
+.demo-hinweis a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.filter-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+  border-radius: 99px; padding: 6px 12px; cursor: pointer;
+}
+.filter-btn svg { width: 17px; height: 17px; }
+.filter-btn.aktiv { color: var(--accent); border-color: var(--accent); }
+.filter-badge {
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  background: var(--accent); color: var(--bg); border-radius: 99px;
+  padding: 0 6px; line-height: 16px;
+}
+.filter-panel { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.filter-panel[hidden] { display: none; }
+.topic-chip {
+  border: 1.5px solid var(--tc); color: var(--tc); background: transparent;
+  border-radius: 99px; padding: 4px 12px; font-size: 12.5px; cursor: pointer;
+}
+.topic-chip.aus {
+  border-color: var(--border); color: var(--text-dim); opacity: 0.55;
+  text-decoration: line-through;
+}
+/* Der Gelesen-Schalter steht mit im Rubriken-Panel, ist aber keine Rubrik —
+   gestrichelt abgesetzt, und ohne Durchstreichung (aus = Normalzustand). */
+.topic-chip.lesen { border-style: dashed; }
+.topic-chip.lesen.aus { text-decoration: none; }
+
+.source-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 4px; }
+.source-chip {
+  font-size: 12px; font-weight: 600; letter-spacing: .03em;
+  color: var(--text-dim); text-decoration: none;
+  padding: 5px 12px; border-radius: 99px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  transition: color .12s, border-color .12s, background .12s;
+}
+.source-chip:hover {
+  color: var(--accent); border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+}
+/* Sammelchip: eine Quelle mit mehreren Artikeln. Als <button> braucht er die Schrift
+   ausdrücklich — sonst nimmt er die des Systems statt die der Karte. */
+.source-chip.sammel {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; cursor: pointer;
+}
+.chip-zahl {
+  min-width: 16px; text-align: center;
+  font-size: 11px; font-weight: 700; line-height: 1.4;
+  padding: 0 5px; border-radius: 99px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+.source-chip.sammel[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+/* `hidden` allein reicht nicht sicher, sobald der Container `display: flex` setzt. */
+.source-chips [hidden] { display: none; }
+
+/* Kartenfuß: Chips links, Lesezeichen unten rechts. Das `margin-top: auto` der Chips
+   übernimmt der Fuß — er ist jetzt das unterste Element der Karte. */
+.card-fuss { display: flex; align-items: flex-end; gap: 8px; margin-top: auto; }
+.card-fuss .source-chips { flex: 1; min-width: 0; margin-top: 0; }
+.bookmark-btn {
+  background: none; border: 0; padding: 2px; cursor: pointer;
+  color: var(--text-dim); flex-shrink: 0; line-height: 0;
+}
+.bookmark-btn svg { width: 20px; height: 20px; }
+.bookmark-btn:hover { color: var(--accent); }
+.bookmark-btn.an { color: var(--accent); }
+.bookmark-btn.an svg { fill: currentColor; }
+
+.source-name {
+  flex-shrink: 0; font-weight: 600; font-size: 12px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+
+.empty {
+  text-align: center; color: var(--text-dim); padding: 80px 20px; font-size: 15px;
+}
+
+/* ---------- Uplift (positive news) ---------- */
+.positive-badge {
+  display: inline-flex; align-items: center; margin-left: auto;
+  color: var(--like);
+}
+.positive-badge svg { width: 16px; height: 16px; display: block; }
+
+/* ---------- Bedeutende Stories („Hot") ---------- */
+/* Warmer Rand + zarter Schein statt greller Fläche: die Karte soll herausstechen,
+   ohne den Feed zu einem Ampelfeld zu machen. Gelesen schlägt Hot — eine gelesene
+   Hot-Karte dämpft wie jede andere (Reihenfolge der Regeln, .read steht unten). */
+.card.hot {
+  border-color: color-mix(in srgb, var(--hot) 55%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--hot) 35%, transparent),
+              0 4px 18px color-mix(in srgb, var(--hot) 18%, transparent);
+}
+.hot-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  color: var(--hot); font-size: 11.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.hot-badge svg { width: 14px; height: 14px; display: block; }
+.card.read.hot {
+  box-shadow: none;
+  border-color: color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+.segmented {
+  display: inline-flex; gap: 4px; margin-bottom: 20px; padding: 4px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 99px;
+}
+.segmented button {
+  border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 550; color: var(--text-dim);
+  padding: 7px 18px; border-radius: 99px;
+  transition: color .15s, background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.segmented button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+.uplift-count { margin-bottom: 4px; }
+.month-header {
+  font-size: 15px; font-weight: 650; color: var(--text-dim);
+  letter-spacing: .01em; margin: 28px 0 14px;
+}
+.month-header:first-of-type { margin-top: 16px; }
+.day-header {
+  font-size: 15px; font-weight: 650; color: var(--text-dim);
+  letter-spacing: .01em; margin: 26px 0 12px;
+}
+/* Die erste Tages-Überschrift dicht an die Filterleiste — sie ist nie :first-child
+   (davor steht die Filterleiste), daher der Nachbar-Selektor. */
+.feed-filter + .day-header { margin-top: 10px; }
+.feed-sentinel { height: 1px; }
+
+/* Gelesen wird am Bild und am Kopf sichtbar, nicht am Fließtext — den bei .55 zu dämpfen
+   macht ihn schlecht lesbar, und gelesene Karten bleiben ja im Feed stehen. */
+.card.read { box-shadow: none; border-color: color-mix(in oklab, var(--border) 55%, transparent); }
+.card.read img.hero { filter: grayscale(1); opacity: .5; }
+/* Der Titel darf gedämpft sein — er ist groß und fett, bei .7 noch mühelos lesbar und
+   trägt den Farbunterschied bei Karten ohne Bild. Die Zusammenfassung bleibt unberührt. */
+.card.read h2 { opacity: .7; }
+.card.read .card-meta, .card.read .source-chips { opacity: .5; }
+.card, .card h2, .card img.hero, .card-meta, .source-chips {
+  transition: opacity .3s ease, filter .3s ease;
+}
+
+.rate-link {
+  display: inline-block; margin-top: 16px; margin-right: 16px;
+  color: var(--accent); font-size: 13.5px; font-weight: 600; text-decoration: none;
+}
+.rate-link:hover { text-decoration: underline; }
+[data-demo] .rate-link { display: none; }
+
+/* ---------- Bewerten ---------- */
+/* Modus-Umschalter über der Bewerten-Karte zentrieren (inline-flex ist sonst linksbündig) */
+.rate-seg { display: flex; width: max-content; max-width: 100%; margin: 0 auto 18px; }
+.rate-kopf { display: flex; justify-content: center; align-items: flex-start; gap: 10px; }
+.rate-kopf .rate-seg { margin: 0 0 18px; }
+.mix-knopf {
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  border-radius: 10px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+}
+.mix-panel {
+  display: flex; justify-content: center; align-items: center; gap: 14px;
+  flex-wrap: wrap; margin: 0 auto 16px; max-width: 640px; font-size: 13px;
+  color: var(--muted);
+}
+/* `hidden` allein verliert gegen display:flex — dieselbe Falle wie .source-chips */
+.mix-panel[hidden] { display: none; }
+.mix-panel label { display: flex; align-items: center; gap: 6px; }
+.mix-panel input {
+  width: 3.2em; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px;
+}
+.mix-marke {
+  border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px;
+  font-size: 11px; color: var(--muted);
+}
+.rate-wrap { max-width: 640px; margin: 0 auto; }
+.rate-stage { min-height: 380px; }
+.rate-card { margin-bottom: 18px; }
+.rate-card h2 a { color: var(--text); text-decoration: none; }
+.rate-card h2 a:hover { color: var(--accent); }
+.rate-intro {
+  font-size: 15px; color: var(--text); opacity: .88; line-height: 1.6;
+  max-height: 220px; overflow: hidden; position: relative;
+  -webkit-mask-image: linear-gradient(#000 70%, transparent);
+  mask-image: linear-gradient(#000 70%, transparent);
+}
+.rate-card .source-name { width: auto; }
+.rate-card.fly-right { animation: flyRight .18s ease-in forwards; }
+.rate-card.fly-left { animation: flyLeft .18s ease-in forwards; }
+@keyframes flyRight { to { opacity: 0; transform: translateX(60px) rotate(2deg); } }
+@keyframes flyLeft { to { opacity: 0; transform: translateX(-60px) rotate(-2deg); } }
+
+.rate-actions {
+  position: sticky; bottom: 18px;
+  display: flex; align-items: center; justify-content: center; gap: 22px;
+  padding: 10px 16px; border-radius: 99px; margin: 0 auto; width: fit-content;
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+.rate-btn {
+  width: 58px; height: 58px; border-radius: 50%; cursor: pointer; line-height: 0;
+  display: grid; place-items: center; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-dim);
+  transition: transform .12s, color .12s, border-color .12s, background .12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.rate-btn svg { width: 24px; height: 24px; }
+.rate-btn.up:hover { color: var(--like); border-color: var(--like); }
+.rate-btn.down:hover { color: var(--dislike); border-color: var(--dislike); }
+.rate-btn:active { transform: scale(1.12); }
+.rate-skip {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 13.5px; font-family: inherit; padding: 8px 12px; border-radius: 999px;
+}
+.rate-skip:hover { color: var(--text); background: var(--surface-2); }
+.rate-count { text-align: center; margin-top: 14px; }
+
+.skeleton { border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); height: 320px; position: relative; overflow: hidden; }
+.skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 30%, var(--surface-2) 50%, transparent 70%);
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+/* ---------- World (Globus) ---------- */
+/* Wie die Karte: volle Fläche, Canvas bleibt beim Tab-Wechsel geladen (das Gitter aus dem
+   Höhenraster einmal zu bauen kostet spürbar Zeit) und wird nur ein- und ausgeblendet. */
+body[data-view="world"] main { max-width: none; padding: 0; }
+#globe-host { display: none; }
+body[data-view="world"] #globe-host { display: block; }
+#globe, #globe-sky, #globe-iss {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: block;
+}
+#globe { touch-action: none; cursor: grab; }
+#globe:active { cursor: grabbing; }
+/* Der Hintergrund liegt auf der Sternebene, nicht auf dem Globus: der Globus löscht nur
+   das Umfeld seiner Kugel und muss darum durchsichtig bleiben, sonst deckt er die Sterne
+   zu. Die ISS-Ebene liegt darüber und darf keine Tipper schlucken — die gehören dem
+   Globus und seinen Markern. */
+#globe-sky { background: var(--bg); }
+#globe-iss { pointer-events: none; }
+.globe-status {
+  position: fixed; z-index: 20; left: 50%; top: calc(var(--sat) + 20px);
+  transform: translateX(-50%);
+  padding: 7px 14px; border-radius: 99px; font-size: 13px; color: var(--text-dim);
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+  max-width: calc(100% - 32px); text-align: center;
+}
+.globe-status:empty { display: none; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+#globe { height: 100dvh; }
+/* Ohne scrollbaren Inhalt kürzt iOS im Standalone-Modus den Viewport um die obere
+   Safe Area — dieselbe Falle wie bei der Karte (siehe dort, auch warum ohne
+   Media-Query), dieselbe unsichtbare Scrollreserve. */
+body[data-view="world"] main::after {
+  content: ""; display: block; height: calc(100dvh + 80px);
+}
+
+/* ---------- Story-Overlay (vom Globus) ---------- */
+.sheet { position: fixed; inset: 0; z-index: 60; display: flex; }
+.sheet-hinter {
+  position: absolute; inset: 0; background: rgba(0,0,0,.45);
+  opacity: 0; transition: opacity .22s ease;
+}
+.sheet.auf .sheet-hinter { opacity: 1; }
+.sheet-karte {
+  position: relative; margin: auto; width: 100%; height: 100%;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: var(--bg);
+  padding: calc(var(--sat) + 56px) 20px calc(var(--sab) + 32px);
+  transform: translateY(18px); opacity: 0;
+  transition: transform .26s cubic-bezier(.22,.9,.3,1), opacity .2s ease;
+}
+.sheet.auf .sheet-karte { transform: translateY(0); opacity: 1; }
+.sheet-karte:focus { outline: none; }
+.sheet-zu {
+  position: absolute; z-index: 2; top: calc(var(--sat) + 12px); right: 14px;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+}
+.sheet-zu svg { width: 20px; height: 20px; }
+.sheet-zu:hover { background: var(--surface); }
+.sheet-inhalt { max-width: 640px; margin: 0 auto; }
+.sheet-inhalt .hero {
+  width: 100%; aspect-ratio: 16/9; object-fit: cover;
+  border-radius: var(--radius-sm); margin-bottom: 16px;
+}
+.sheet-kopf {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--text-dim); margin-bottom: 8px;
+}
+.sheet-kopf .ort {
+  font-weight: 650; color: var(--accent); text-transform: uppercase; letter-spacing: .05em;
+}
+.sheet-inhalt h2 { font-size: 22px; line-height: 1.3; font-weight: 650; margin-bottom: 12px; }
+.sheet-inhalt .summary { font-size: 15.5px; line-height: 1.65; opacity: .92; }
+.sheet-inhalt .source-chips { margin-top: 18px; }
+body.sheet-offen { overflow: hidden; }
+/* Auf großen Bildschirmen deckt die Kachel nicht alles ab — dann soll die Tab-Pille
+   nicht über dem Dialog schweben. */
+body.sheet-offen #tabbar { opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+@media (min-width: 721px) {
+  /* Auf großen Bildschirmen keine Vollfläche, sondern eine schwebende Kachel. */
+  .sheet-karte {
+    width: min(600px, calc(100% - 48px)); height: auto; max-height: 84vh;
+    border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    padding: 52px 28px 28px;
+  }
+  .sheet-zu { top: 12px; }
+}
+
+/* Map fills the whole viewport on every device — the tab pill floats over it,
+   just like over the scrolling content of the other tabs. The map's own controls
+   dodge the notch and the pill via the injected --sat/--sab insets (see renderMap). */
+body[data-view="map"] main { max-width: none; padding: 0; }
+/* Der iframe bleibt geladen und wird nur versteckt — ein Aus- und Wiedereinhängen würde
+   ihn neu laden (siehe renderMap in app.js). */
+#map-host { display: none; }
+body[data-view="map"] #map-host { display: block; }
+/* Fixed, volle Fläche. width/height MÜSSEN gesetzt sein — ein iframe ist ein replaced
+   element, left/right allein füllt es in Safari nicht (Default-Breite 300px). height:100%
+   ließ auf iOS unten die Safe-Area (Home-Indicator) frei; 100dvh (dynamische
+   Viewport-Höhe) füllt bis zum echten Bildschirmrand, 100% bleibt Rückfall für Browser
+   ohne dvh. */
+iframe.map-frame {
+  position: fixed; top: 0; left: 0; right: 0;
+  width: 100%; height: 100%; height: 100dvh; border: none; background: var(--bg);
+}
+/* Der fixierte iframe lässt das Dokument 0 px hoch — und ohne scrollbaren Inhalt kürzt
+   iOS im Standalone-Modus den Viewport um die obere Safe Area (innerHeight 762 statt
+   812), oben verankert: unten bleibt ein toter Streifen, die Tab-Pille schwebt zu hoch.
+   Der unsichtbare Platzhalter gibt der Karte dieselbe Scrollreserve wie den übrigen
+   Tabs. Sichtbar bewegt sich dabei nichts — iframe und Pille sind fixiert, und das
+   Canvas schluckt Wischgesten ohnehin (touch-action: none). Bewusst ohne Media-Query:
+   Im Mobil-Breakpoint allein lief das iPad (Querformat 1024 px) daran vorbei, und ob
+   `display-mode: standalone` auf dem Gerät greift, lässt sich von hier nicht messen —
+   am Desktop kostet die Reserve nichts Sichtbares. */
+body[data-view="map"] main::after {
+  content: ""; display: block; height: calc(100dvh + 80px);
+}
+
+.stats-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
+}
+.panel h3 { font-size: 14px; font-weight: 650; margin-bottom: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
+.panel.wide { grid-column: 1 / -1; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); }
+.legend-item i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.panel svg { width: 100%; height: auto; display: block; }
+/* Platzhalter, solange die Kachel ihre Daten lädt — gleiche Schimmer-Animation wie die
+   Feed-Skelette, nur flacher. */
+.panel-laedt {
+  height: 110px; border-radius: var(--radius-sm);
+  background: var(--surface-2); position: relative; overflow: hidden;
+}
+.panel-laedt::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 30%, var(--surface) 50%, transparent 70%);
+  animation: shimmer 1.4s infinite;
+}
+.hint.updated { font-size: 11.5px; margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--border); opacity: .8; }
+.stat-big { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-label { font-size: 13px; color: var(--text-dim); }
+.kv { display: flex; justify-content: space-between; font-size: 13.5px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.kv:last-child { border-bottom: none; }
+.kv b { font-variant-numeric: tabular-nums; }
+.kv.total { border-top: 1px solid var(--border); border-bottom: none; margin-top: 3px; padding-top: 7px; font-weight: 600; }
+.kv.total span { color: var(--text); }
+
+/* ---------- Keyword-Präferenzen (Statistik) ---------- */
+.kw-pref {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.kw-col { min-width: 0; }
+.kw-col h4 {
+  font-size: 11px; font-weight: 650; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-dim); margin-bottom: 4px;
+}
+.kw-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border);
+}
+.kw-row:last-child { border-bottom: none; }
+/* hidden verliert gegen display:flex — wie bei den Quellen-Chips */
+.kw-row[hidden] { display: none; }
+.kw-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-row b { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.kw-row b.pos { color: var(--like); }
+.kw-row b.neg { color: var(--dislike); }
+.kw-more { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 8px; cursor: pointer; }
+
+/* ---------- Settings-Panel (unten in der Statistik) ---------- */
+/* Zugeklappt: neun Regler am Stück drängen die Diagramme darüber aus dem Blick. */
+.panel.settings summary {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  list-style: none; -webkit-tap-highlight-color: transparent;
+}
+.panel.settings summary::-webkit-details-marker { display: none; }
+.panel.settings summary h3 { margin-bottom: 0; }
+.panel.settings summary::after {
+  content: ""; margin-left: auto; width: 7px; height: 7px;
+  border-right: 2px solid var(--text-dim); border-bottom: 2px solid var(--text-dim);
+  transform: translateY(-2px) rotate(45deg); transition: transform .18s;
+}
+.panel.settings[open] summary::after { transform: translateY(2px) rotate(-135deg); }
+.panel.settings[open] summary { margin-bottom: 6px; }
+.settings-gruppe { margin-top: 22px; }
+.settings-gruppe:first-of-type { margin-top: 6px; }
+.settings-gruppe h4 {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 650; margin-bottom: 2px;
+}
+.settings-gruppe code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  background: var(--surface-2); border-radius: 5px; padding: 1px 5px;
+}
+.pending {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent); border: 1px solid var(--accent); border-radius: 99px;
+  padding: 1px 8px;
+}
+.regler { margin-top: 14px; }
+.regler label {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  font-size: 14px;
+}
+.regler label b { font-variant-numeric: tabular-nums; color: var(--accent); }
+.regler .hint { font-size: 12.5px; margin-top: 2px; }
+.regler input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 26px;
+  background: transparent; margin: 2px 0;
+}
+.regler input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: var(--surface-2);
+}
+.regler input[type="range"]::-moz-range-track {
+  height: 4px; border-radius: 2px; background: var(--surface-2);
+}
+/* Der Griff ist bewusst groß: am Handy wird er mit dem Daumen getroffen. */
+.regler input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 22px; height: 22px; margin-top: -9px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow);
+  transition: transform .12s;
+}
+.regler input[type="range"]::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--accent);
+  background: var(--surface); box-shadow: var(--shadow);
+}
+.regler input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); }
+/* Live-Vorschau unter den Feed-Reglern: zeigt beim Ziehen, was die Einstellung bewirkt. */
+.vorschau {
+  margin-top: 14px; padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--surface-2); font-size: 13.5px; color: var(--text-dim);
+}
+.vorschau b { color: var(--text); font-variant-numeric: tabular-nums; font-size: 15px; }
+
+/* ---------- Keywords zusammenlegen (#merge) ---------- */
+.merge-wrap { max-width: 900px; }
+.merge-paar {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: start;
+  margin-bottom: 18px;
+}
+.merge-kw h2 { font-size: 20px; margin: 0 0 4px; overflow-wrap: anywhere; }
+.merge-mitte {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding-top: 22px; min-width: 96px;
+}
+.merge-score { font-size: 22px; font-weight: 600; color: var(--accent); }
+.merge-badge {
+  font-size: 12px; color: var(--text-dim); border: 1px solid var(--border);
+  border-radius: 99px; padding: 2px 9px; white-space: nowrap;
+}
+.merge-quellen {
+  display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 8px 0;
+  font-size: 12.5px; color: var(--text-dim);
+}
+.merge-quelle i {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 5px; vertical-align: 1px;
+}
+.merge-beispiele { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.merge-beispiele a { color: var(--text); text-decoration: none; }
+.merge-beispiele a:hover { color: var(--accent); }
+.merge-paar.fly-right { animation: flyRight .18s ease-in forwards; }
+.merge-paar.fly-left { animation: flyLeft .18s ease-in forwards; }
+.merge-gruppen { margin-top: 26px; }
+.merge-gruppen summary { cursor: pointer; font-weight: 600; }
+.merge-gruppe { padding: 10px 0; border-top: 1px solid var(--border); }
+.merge-gruppe:first-child { border-top: none; }
+.merge-gruppen-liste { margin-top: 10px; }
+.merge-mitglieder { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.merge-mitglied {
+  display: inline-flex; align-items: center; border: 1px solid var(--border);
+  border-radius: 99px; background: var(--surface-2); font-size: 12.5px;
+}
+.merge-mitglied.kanon { border-color: var(--accent); }
+.merge-mitglied button {
+  background: none; border: none; color: var(--text); cursor: pointer; font: inherit;
+  padding: 4px 8px; display: inline-flex; align-items: center; gap: 5px;
+}
+.merge-mitglied .merge-raus { color: var(--text-dim); padding-left: 2px; }
+.merge-mitglied .merge-raus:hover { color: var(--dislike); }
+@media (max-width: 720px) {
+  .merge-paar { grid-template-columns: 1fr; }
+  .merge-mitte { flex-direction: row; flex-wrap: wrap; justify-content: center; padding: 0; }
+}

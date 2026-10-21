@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en" data-demo>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://cdn.arstechnica.net https://cdn.netzpolitik.org https://dialogue.earth https://heise.cloudimg.io https://ichef.bbci.co.uk https://image5.sixthtone.com https://images.tagesschau.de https://img.zeit.de https://ocdn.eu https://restofworld.org https://taz.de https://www.sciencenews.org; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Keyword map</title>
+<style>
+  /* Hell/Dunkel folgt dem Systemschema wie die übrige App — die Karte war vorher fest
+     dunkel und fiel im hellen Modus aus dem Rahmen. Die Canvas-Farben hängen am
+     JS-Gegenstück (setzeTheme weiter unten). */
+  :root {
+    --m-bg: #0b0e16; --m-text: #c8cede; --m-text2: #a8b1cc; --m-text3: #b6bdd2;
+    --m-hell: #e6e9f2; --m-dim: #8b93ad; --m-leise: #59617d;
+    --m-flaeche: rgba(23,28,44,.72); --m-flaeche2: rgba(20,25,40,.82);
+    --m-flaeche3: rgba(20,25,40,.92); --m-flaeche-leicht: rgba(20,25,40,.66);
+    --m-tip: rgba(23,28,44,.95);
+    --m-aktiv: rgba(35,42,66,.85); --m-hover: rgba(35,42,66,.7);
+    --m-rand: #232a42; --m-rand-aktiv: #4c5a8a;
+    --m-chip: #1b2138; --m-chip2: #171d2f; --m-chip-rand: #2c3452; --m-tick: #3a4260;
+    --m-link: #9db1e9; --m-link-hover: #c3d0f5; --m-akzent: #7aa2f7;
+    --m-warn: #e0af68; --m-danger: #f7768e; --m-danger-hell: #ffb3bf; --m-danger-rand: #6b3546;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --m-bg: #fafafa; --m-text: #2a2f3a; --m-text2: #4a5162; --m-text3: #555c6c;
+      --m-hell: #14171e; --m-dim: #6b7280; --m-leise: #8a91a3;
+      --m-flaeche: rgba(255,255,255,.72); --m-flaeche2: rgba(255,255,255,.85);
+      --m-flaeche3: rgba(255,255,255,.93); --m-flaeche-leicht: rgba(255,255,255,.66);
+      --m-tip: rgba(255,255,255,.96);
+      --m-aktiv: rgba(222,229,241,.9); --m-hover: rgba(228,232,241,.8);
+      --m-rand: #dde1ea; --m-rand-aktiv: #7a95d8;
+      --m-chip: #eef0f5; --m-chip2: #eceff5; --m-chip-rand: #d4d9e3; --m-tick: #c6ccd9;
+      --m-link: #3a63cc; --m-link-hover: #2749a8; --m-akzent: #4f8ef7;
+      --m-warn: #a97018; --m-danger: #d23a55; --m-danger-hell: #a82440; --m-danger-rand: #e3a5b1;
+    }
+  }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: var(--m-bg);
+    font: 14px/1.5 -apple-system, "SF Pro Text", "Segoe UI", sans-serif; color: var(--m-text); }
+  canvas { display: block; cursor: grab; touch-action: none; }
+  canvas:active { cursor: grabbing; }
+  /* --sat/--sab: Safe-Area-Insets, von der App in die eingebettete Karte injiziert
+     (env() direkt ist in iOS-iframes unzuverlässig); standalone greift der env()-Fallback.
+     --oben: wo die Bedienelemente oben beginnen — eingebettet und breit unter der Tab-Pille. */
+  :root { --oben: var(--sat, env(safe-area-inset-top, 0px)); }
+  #ui { position: fixed; top: calc(16px + var(--oben));
+    left: 16px; display: flex; gap: 6px; flex-wrap: wrap; }
+  #ui button { background: var(--m-flaeche); color: var(--m-dim); border: 1px solid var(--m-rand);
+    border-radius: 999px; padding: 8px 15px; font: inherit; font-size: 13px; cursor: pointer;
+    -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
+    transition: color .15s, border-color .15s; }
+  #ui button:hover { color: var(--m-text); }
+  #ui button.aktiv { color: var(--m-hell); border-color: var(--m-rand-aktiv); background: var(--m-aktiv); }
+  #suche { position: fixed; top: calc(16px + var(--sat, env(safe-area-inset-top, 0px)));
+    right: 16px; width: 220px; background: var(--m-flaeche);
+    border: 1px solid var(--m-rand); border-radius: 999px; padding: 9px 16px; font: inherit;
+    font-size: 13px; color: var(--m-hell); outline: none;
+    -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); }
+  #suche::placeholder { color: var(--m-leise); }
+  #suche:focus { border-color: var(--m-rand-aktiv); }
+  #legende { position: fixed; bottom: 14px; left: 16px; font-size: 12px; color: var(--m-leise); }
+  #tip { position: fixed; pointer-events: none; background: var(--m-tip); border: 1px solid var(--m-chip-rand);
+    border-radius: 16px; padding: 8px 12px; font-size: 13px; color: var(--m-hell); display: none;
+    max-width: 260px; }
+  #tip small { color: var(--m-dim); }
+  #panel { position: fixed; top: calc(60px + var(--oben));
+    right: 16px; width: 300px; max-height: calc(100% - 90px - var(--oben));
+    overflow-y: auto; background: var(--m-flaeche2); border: 1px solid var(--m-rand); border-radius: 26px;
+    padding: 18px; display: none; -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%); }
+  #panel h2 { font-size: 17px; font-weight: 600; color: var(--m-hell); margin-bottom: 4px; }
+  #panel .meta { font-size: 12.5px; color: var(--m-dim); margin-bottom: 12px; }
+  #panel .balken { height: 5px; border-radius: 3px; background: var(--m-rand); margin: 6px 0 14px; overflow: hidden; }
+  #panel .balken div { height: 100%; border-radius: 3px; }
+  #panel h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--m-leise); margin: 14px 0 7px; }
+  #panel a { display: block; color: var(--m-link); text-decoration: none; font-size: 13px;
+    padding: 4px 0; line-height: 1.4; }
+  #panel a:hover { color: var(--m-link-hover); }
+  #panel .nachbar { display: inline-block; background: var(--m-chip); border: 1px solid var(--m-chip-rand);
+    border-radius: 999px; padding: 4px 11px; margin: 0 5px 5px 0; font-size: 12.5px;
+    color: var(--m-text2); cursor: pointer; }
+  #panel .nachbar:hover { border-color: var(--m-rand-aktiv); color: var(--m-hell); }
+  #panel .zu { position: absolute; top: 10px; right: 12px; cursor: pointer; color: var(--m-leise);
+    font-size: 16px; background: none; border: none; }
+  #panel .aus { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--m-rand); }
+  #panel .aus button { font: inherit; font-size: 12.5px; border-radius: 7px; cursor: pointer;
+    padding: 7px 12px; background: var(--m-chip); border: 1px solid var(--m-chip-rand); color: var(--m-dim); }
+  #panel .aus button:hover { border-color: var(--m-rand-aktiv); color: var(--m-hell); }
+  #panel .aus .ja { border-color: var(--m-danger-rand); color: var(--m-danger); }
+  #panel .aus .ja:hover { border-color: var(--m-danger); color: var(--m-danger-hell); }
+  #panel .aus .frage { font-size: 12.5px; color: var(--m-text2); line-height: 1.45; margin-bottom: 9px; }
+  #panel .aus .knoepfe { display: flex; gap: 7px; }
+  #panel .aus .fehler { color: var(--m-warn); }
+  #zeitleiste { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+    display: none; align-items: center; gap: 10px; background: var(--m-flaeche);
+    border: 1px solid var(--m-rand); border-radius: 999px; padding: 9px 16px;
+    -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); }
+  #zeitleiste.an { display: flex; }
+  #play { background: none; border: none; color: var(--m-text); font-size: 14px; cursor: pointer;
+    width: 24px; padding: 0; }
+  #play:hover { color: #fff; }
+  #sliderwrap { position: relative; width: min(340px, 40vw); display: flex; flex-direction: column; }
+  #woche { width: 100%; accent-color: var(--m-akzent); }
+  #ticks { position: relative; height: 12px; margin-top: 1px; }
+  #ticks span { position: absolute; top: 0; transform: translateX(-50%); font-size: 9.5px;
+    color: var(--m-leise); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #ticks span::before { content: ""; position: absolute; top: -3px; left: 50%;
+    width: 1px; height: 3px; background: var(--m-tick); }
+  #wochenlabel { font-size: 12.5px; color: var(--m-dim); min-width: 78px; font-variant-numeric: tabular-nums; }
+  #panel .zr-info { font-size: 12px; color: var(--m-dim); margin: 2px 0 6px; }
+  #panel .zr-leer { font-size: 12.5px; color: var(--m-leise); padding: 4px 0; }
+  /* milchig transparenter Kasten, damit die Cluster-Namen nicht auf der Karte "verschwinden" */
+  #cluster-legende { position: fixed; top: calc(64px + var(--oben));
+    left: 16px; display: flex;
+    flex-direction: column; gap: 2px; max-width: 244px; padding: 6px;
+    background: var(--m-flaeche-leicht); border: 1px solid var(--m-rand); border-radius: 22px;
+    -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%); }
+  #cluster-legende .eintrag { display: flex; align-items: center; gap: 8px; cursor: pointer;
+    font-size: 12.5px; color: var(--m-text3); padding: 5px 9px; border-radius: 11px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #cluster-legende .eintrag:hover { background: var(--m-hover); color: var(--m-hell); }
+  #cluster-legende .eintrag.aktiv { background: var(--m-rand); color: var(--m-hell); }
+  #cluster-legende .punkt { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  #cluster-legende .zahl { color: var(--m-leise); font-variant-numeric: tabular-nums;
+    margin-left: auto; padding-left: 10px; }
+  #cluster-kopf { display: flex; align-items: center; gap: 6px; cursor: pointer;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--m-leise);
+    padding: 5px 9px; border-radius: 11px; user-select: none; }
+  #cluster-kopf:hover { color: var(--m-hell); }
+  #cluster-legende.zu .eintrag { display: none; }
+  #settings { position: fixed; top: calc(64px + var(--oben));
+    left: 16px; z-index: 20; display: none; width: 265px;
+    max-height: calc(100% - 90px - var(--oben)); overflow-y: auto;
+    background: var(--m-flaeche3); border: 1px solid var(--m-rand); border-radius: 26px; padding: 15px;
+    -webkit-backdrop-filter: blur(16px) saturate(160%); backdrop-filter: blur(16px) saturate(160%); }
+  #settings.an { display: block; }
+  #settings .s-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--m-leise); margin-bottom: 7px; }
+  #settings .s-gruppe + .s-gruppe { margin-top: 15px; }
+  #settings .s-optionen { display: flex; gap: 6px; }
+  #settings .s-optionen button { flex: 1; background: var(--m-chip); color: var(--m-dim); border: 1px solid var(--m-chip-rand);
+    border-radius: 999px; padding: 7px 0; font: inherit; font-size: 12.5px; cursor: pointer;
+    transition: color .15s, border-color .15s; }
+  #settings .s-optionen button.aktiv { color: var(--m-hell); border-color: var(--m-rand-aktiv); background: var(--m-aktiv); }
+  #settings .s-hinweis { margin-top: 8px; font-size: 11.5px; color: var(--m-leise); line-height: 1.45; }
+  #settings input[type=range] { width: 100%; accent-color: var(--m-akzent); margin: 4px 0 2px; }
+  #settings input[type=range]:disabled { accent-color: var(--m-tick); opacity: .5; }
+  #settings .s-wert { float: right; color: var(--m-text2); font-weight: 500; text-transform: none;
+    letter-spacing: 0; font-variant-numeric: tabular-nums; }
+  /* Knoten- und Themenzahl gelten geräteübergreifend und werden erst vom nächsten
+     Kartenbau auf dem Mac umgesetzt — der Status sagt, ob das schon passiert ist. */
+  #settings .s-bau { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--m-rand);
+    font-size: 11.5px; line-height: 1.45; color: var(--m-dim); }
+  #settings .s-bau.offen { color: var(--m-warn); }
+  /* Regler, die nur für eine der beiden Projektionen gelten */
+  body[data-proj="kugel"] .nur-flach, body[data-proj="flach"] .nur-kugel { display: none; }
+  /* Themenverteilung der Umgebung im Knoten-Panel: der Balken liegt hinter dem Text,
+     nicht daneben — so bleibt der Themenname lesbar und die Länge trotzdem vergleichbar. */
+  #panel .umgebung { display: flex; flex-direction: column; gap: 3px; }
+  #panel .umg { position: relative; font-size: 12.5px; color: var(--m-text); padding: 3px 9px;
+    border-radius: 7px; background: var(--m-chip2); overflow: hidden; }
+  #panel .umg::before { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--b);
+    background: var(--f); opacity: .30; }
+  #panel .umg i { position: relative; float: right; font-style: normal; color: var(--m-dim);
+    font-variant-numeric: tabular-nums; }
+  @media (max-width: 720px) {
+    #zeitleiste { bottom: calc(68px + var(--sab, env(safe-area-inset-bottom, 0px)));
+      left: 16px; right: 16px; transform: none; }
+    #sliderwrap { width: auto; flex: 1; }
+    #ui button { padding: 8px 13px; font-size: 12.5px; }
+    #suche { top: auto; bottom: calc(14px + var(--sab, env(safe-area-inset-bottom, 0px)));
+      left: 16px; right: 16px; width: auto; }
+    #legende { display: none; }
+    #panel { top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: 52%;
+      border-radius: 32px 32px 0 0; border-bottom: none;
+      padding-bottom: calc(18px + var(--sab, env(safe-area-inset-bottom, 0px))); }
+    /* die Button-Reihe kann zweizeilig umbrechen — Legende und Settings darunter beginnen */
+    #cluster-legende { top: calc(106px + var(--oben)); }
+    #settings { top: calc(106px + var(--oben));
+      left: 16px; right: 16px; width: auto;
+      /* Platz für die Suchpille am unteren Rand lassen, Rest scrollt im Panel */
+      max-height: calc(100% - 170px - var(--oben)
+                       - var(--sab, env(safe-area-inset-bottom, 0px))); }
+    /* eingebettet in die App: Suche, Zeitleiste und Panel weichen der Tab-Pille aus */
+    .embedded #suche { bottom: calc(80px + var(--sab, 0px)); }
+    .embedded #zeitleiste { bottom: calc(136px + var(--sab, 0px)); }
+    .embedded #panel { padding-bottom: calc(86px + var(--sab, 0px)); }
+  }
+  @media (min-width: 721px) {
+    /* Breit steht die Tab-Pille der App oben mittig (style.css #tabbar: 12 px vom Rand, 50 px
+       hoch, 374 px breit) und verdeckte bis zu fünf Knöpfe. Die Knopfreihe rückt darunter,
+       die Suche teilt sich die Zeile mit der Pille und schrumpft bis an deren Rand. */
+    .embedded { --oben: calc(var(--sat, 0px) + 56px); }
+    .embedded #suche { width: min(220px, calc(50% - 213px)); }
+  }
+  #vorschlaege { position: fixed; z-index: 40; display: none; overflow-y: auto; padding: 4px;
+    background: var(--m-flaeche3); border: 1px solid var(--m-rand); border-radius: 16px; font-size: 13px;
+    -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
+    box-shadow: 0 8px 28px rgba(0,0,0,.25); }
+  #vorschlaege.an { display: block; }
+  #vorschlaege .v { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 8px 12px; border-radius: 11px; cursor: pointer; color: var(--m-text); }
+  #vorschlaege .v.aktiv, #vorschlaege .v:hover { background: var(--m-hover); color: var(--m-hell); }
+  #vorschlaege .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #vorschlaege .name small, #vorschlaege .meta { color: var(--m-leise); font-size: 11.5px; }
+  #vorschlaege .meta { white-space: nowrap; flex: none; font-variant-numeric: tabular-nums; }
+  #vorschlaege .meta.nas { color: var(--m-akzent); }
+  #vorschlaege .hinweis { padding: 7px 12px; color: var(--m-leise); font-size: 12px; }
+  #panel .suche-weg { color: var(--m-link); cursor: pointer; text-decoration: underline; }
+  /* Öffentliche Demo (news demo): keine Vorlieben, nichts, was den Bau oder die Karte ändert */
+  [data-demo] [data-m="like"], [data-demo] #settings .bau, [data-demo] #panel .aus { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <button data-m="cluster" class="aktiv">Topics</button>
+  <button data-m="similar">Similarity</button>
+  <button data-m="fremd">Misfits</button>
+  <button data-m="streuung">Spread</button>
+  <button data-m="like">Liked</button>
+  <button data-m="momentum">Momentum</button>
+  <button data-m="quelle">Source</button>
+  <button id="settingsBtn">Settings</button>
+</div>
+<div id="settings">
+  <div class="s-gruppe">
+    <span class="s-label">Projection</span>
+    <div class="s-optionen">
+      <button data-p="flach">Plane</button>
+      <button data-p="kugel">Sphere</button>
+    </div>
+    <div class="s-hinweis">On the sphere every keyword has neighbours in all directions —
+      the plane has an edge, and whatever lands there gets pushed outward by it.</div>
+  </div>
+  <div class="s-gruppe nur-kugel">
+    <span class="s-label">Idle spin</span>
+    <div class="s-optionen">
+      <button data-d="an">On</button>
+      <button data-d="aus">Off</button>
+    </div>
+    <div class="s-hinweis">A slow drift when untouched — rotation is the strongest depth
+      cue a sphere without a surface has.</div>
+  </div>
+  <div class="s-gruppe nur-kugel">
+    <span class="s-label">Back side <span class="s-wert" id="rueckWert"></span></span>
+    <input id="rueck" type="range" min="0" max="60" step="1">
+    <div class="s-hinweis">How strongly the far side shows through. Drawn in flat grey so
+      it reads as “behind” instead of competing with the front.</div>
+  </div>
+  <div class="s-gruppe">
+    <span class="s-label">Source colours</span>
+    <div class="s-optionen">
+      <button data-f="mix">Mixed</button>
+      <button data-f="single">Dominant</button>
+    </div>
+    <div class="s-hinweis">Mixed blends the source colours by share — pale means evenly
+      shared. Dominant shows the strongest source only.</div>
+  </div>
+  <div class="s-gruppe nur-flach">
+    <span class="s-label">Node repulsion <span class="s-wert" id="repWert"></span></span>
+    <input id="repulsion" type="range" min="60" max="400" step="10">
+    <div class="s-hinweis">Higher = nodes push apart more, so clusters spread out and the
+      structure becomes easier to see. Default 170. On release the map is laid out afresh from
+      its starting point, so earlier settings leave no trace. The sphere needs no equivalent: its layout is
+      final, because a repulsion with no edge to push against just spreads everything
+      until the structure is gone.</div>
+  </div>
+  <div class="s-gruppe bau">
+    <span class="s-label">Keywords <span class="s-wert" id="knotenWert"></span></span>
+    <input id="knoten" type="range" min="200" max="8000" step="100" value="1000" disabled>
+    <div class="s-hinweis">Upper limit for the number of keyword nodes. Keywords with
+      fewer than 20 articles never make it onto the map, so the map can end up smaller.</div>
+    <span class="s-label" style="margin-top:14px">Edges per keyword
+      <span class="s-wert" id="kantenWert"></span></span>
+    <input id="kanten" type="range" min="3" max="20" step="1" value="10" disabled>
+    <div class="s-hinweis">Each keyword links to its N most similar keywords; edges are
+      merged both ways, so most keywords end up with a few more. On the flat map the
+      edges drive the layout — the more similar two keywords, the shorter and stronger
+      the pull. The sphere only draws them, its layout is fixed.</div>
+    <span class="s-label" style="margin-top:14px">Time spread
+      <span class="s-wert" id="zeitWert"></span></span>
+    <input id="zeit" type="range" min="0" max="90" step="1" value="65" disabled>
+    <div class="s-hinweis">Drops keywords tied to a single event. The number is how much of
+      the calendar spread a keyword reaches, as a share of what its article count allows —
+      so a small source isn't punished for being small. “Bundestagswahl 2025” sits at 8 %,
+      “Umwelt” at 85 %.</div>
+    <span class="s-label" style="margin-top:14px">Ambiguity
+      <span class="s-wert" id="fokusWert"></span></span>
+    <input id="fokus" type="range" min="0" max="60" step="1" value="15" disabled>
+    <div class="s-hinweis">Drops the keywords whose own neighbours agree with each other
+      least — the ones sitting between two areas, which blur the structure without saying
+      anything about a topic.</div>
+    <span class="s-label" style="margin-top:14px">Similarity
+      <span class="s-wert" id="mischungWert"></span></span>
+    <input id="mischung" type="range" min="0" max="100" step="5" value="30" disabled>
+    <div class="s-hinweis">How alike two keywords are: the cosine of their article vectors,
+      with this share replaced by co-occurrence — the share of X's articles that also carry Y
+      plus the share of Y's that carry X, halved. Co-occurrence pulls together what is
+      reported together, across the language gap the cosine keeps. Shapes the edges and the
+      repulsion between unlike keywords.</div>
+    <span class="s-label" style="margin-top:14px">Keyword groups</span>
+    <div class="s-optionen">
+      <button data-g="an" disabled>Merged</button>
+      <button data-g="aus" disabled>Separate</button>
+    </div>
+    <div class="s-hinweis">Merged: keywords joined in the merge tool count as one node
+      (“KI”, “AI”, “Künstliche Intelligenz”). Separate: each stands on its own, and the map
+      shows where translations and spellings land without being joined.</div>
+    <div class="s-bau" id="bauStatus"></div>
+  </div>
+</div>
+<input id="suche" placeholder="Search keyword …" autocomplete="off">
+<div id="cluster-legende"></div>
+<div id="zeitleiste">
+  <button id="play" aria-label="Play timelapse">▶</button>
+  <div id="sliderwrap">
+    <input id="woche" type="range" min="0" value="0" step="1">
+    <div id="ticks"></div>
+  </div>
+  <span id="wochenlabel"></span>
+</div>
+<div id="legende"></div>
+<div id="tip"></div>
+<div id="panel"></div>
+<script src="demo.js"></script>
+<script src="d3.min.js"></script>
+<script src="map_layout.js"></script>
+<script src="map.js"></script>
+</body>
+</html>
