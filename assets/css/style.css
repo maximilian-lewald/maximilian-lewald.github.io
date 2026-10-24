@@ -115,11 +115,77 @@ a {
 }
 
 .profile h1 {
-  margin: 0 0 22px;
-  font-size: clamp(26px, 6vw, 36px);
+  position: relative;
+  width: fit-content;
+  margin: 0 auto 22px;
+  /* 8vw keeps the name on one line on very narrow screens. */
+  font-size: min(clamp(26px, 6vw, 36px), 8vw);
   font-weight: 700;
   letter-spacing: -.02em;
   line-height: 1.15;
+  white-space: nowrap;
+}
+
+/* The name is typed like a terminal command when intro.js sets .intro.
+   --chars counts the visible characters of the 17 in the name; without
+   animation it stays at 17 and the cursor stays hidden. */
+@property --chars {
+  syntax: "<integer>";
+  inherits: true;
+  initial-value: 17;
+}
+
+.intro .typed {
+  animation: type 2s step-end both;
+}
+
+.typed > span {
+  display: inline-block;
+  clip-path: inset(0 calc(100% - 100% * var(--chars) / 17) 0 0);
+}
+
+/* Block cursor, one character wide: solid while typing, then it blinks
+   three times and goes away. */
+.typed::after {
+  content: "";
+  position: absolute;
+  top: .1em;
+  bottom: .1em;
+  left: calc(100% * var(--chars) / 17);
+  width: calc(100% / 17);
+  background: color-mix(in srgb, var(--accent) 20%, var(--text-dim));
+  opacity: 0;
+}
+
+.intro .typed::after {
+  animation: blink 1s step-end 2s 3 both;
+}
+
+/* Uneven keystrokes, with a pause after the space for the capital L. */
+@keyframes type {
+  0%        { --chars: 0; }
+  25%       { --chars: 1; }
+  30%       { --chars: 2; }
+  34%       { --chars: 3; }
+  39%       { --chars: 4; }
+  43%       { --chars: 5; }
+  47%       { --chars: 6; }
+  52%       { --chars: 7; }
+  55%       { --chars: 8; }
+  59%       { --chars: 9; }
+  63%       { --chars: 10; }
+  69%       { --chars: 11; }
+  76%       { --chars: 12; }
+  81%       { --chars: 13; }
+  85%       { --chars: 14; }
+  89%       { --chars: 15; }
+  93%       { --chars: 16; }
+  97%, 100% { --chars: 17; }
+}
+
+@keyframes blink {
+  0%        { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 .links {
@@ -305,5 +371,10 @@ a.card:hover .card-target {
 @media (prefers-reduced-motion: reduce) {
   a.card:hover {
     transform: none;
+  }
+
+  .intro .typed,
+  .intro .typed::after {
+    animation: none;
   }
 }
