@@ -5,20 +5,18 @@
    `nodes` (Knoten mit i, r, x, y, ux, uy). */
 
 const TAU = Math.PI * 2;
-// Zählt hoch, wenn sich Kräfte oder Startlage ändern: Gespeicherte Layouts — im Gerät wie in
-// der Datenbank — gelten nur für ihre Version.
-const LAYOUT_VERSION = 4;   // 4: Regler rechnet vom Start, ältere Einträge können vom Reglerweg abhängen
-const ABSTOSSUNG_VORGABE = 170;   // „Node repulsion“; für diesen Wert rechnet der Mac beim Bau vor
+// Zählt hoch, wenn sich die Kräfte selbst oder die Startlage ändern: Gespeicherte Layouts — im
+// Gerät wie in der Datenbank — gelten nur für ihre Version. Ihre Stärken stehen dagegen im
+// Schlüssel (config.MAP_LAYOUT, eingestellt im Settings-Panel) und brauchen keine neue Version.
+const LAYOUT_VERSION = 6;   // 6: Kanten ziehen in den ersten Schritten stärker (kantenzug_frueh)
 // Feste Werte, eingestellt im Konzept (concepts/karten_layout)
 const KNOTEN_FAKTOR = 1.2;   // Zeichen- und Kollisionsradius = (2,2 + 0,55·√Artikel) × dies
 const SCHWERKRAFT = 0.055;   // Zug jedes Knotens zur Mitte
-// Unähnlichkeit: Knoten im Umkreis stoßen sich zusätzlich ab, je unähnlicher sie sind, und
-// halten einen Mindestabstand, der mit der Unähnlichkeit wächst — voll ab Ähnlichkeit
-// kosOben − kosSpanne, keiner ab kosOben. Die Abstoßung allein ging bei großer Reichweite in
-// der Summe Hunderter Nachbarn unter („Robert Habeck" blieb neben „Mord"); der Abstand ist
-// eine Zwangsbedingung je Paar und hält, egal wie viele andere drücken (fremde nächste
-// Nachbarn 117 → 19 von 1 000 bei gleicher Kartengröße).
-const UNAEHNLICH = { kraft: 6000, reichweite: 1000, abstand: 150, kosOben: 0.7, kosSpanne: 0.3 };
+const ABSTAND_SPANNE = 0.3;  // der Mindestabstand wächst über so viel Ähnlichkeit auf sein Maß
+// Abkühlen: schneller als d3s Vorgabe (~110 statt ~245 Schritte) bei praktisch gleicher Ausdehnung
+const ALPHA_ZERFALL = 0.06;
+// So viele Schritte nach dem Start ziehen die Kanten p.kantenzug_frueh-mal so stark (kraftKanten)
+const FRUEH_TICKS = 50;
 
 const knotenRadius = d => (2.2 + Math.sqrt(d.m ?? d.n) * 0.55) * KNOTEN_FAKTOR;
 
@@ -70,14 +68,23 @@ function aehnlich(a, b) {
   return (1 - G.mix) * kos(a, b) + G.mix * (KOOC.get(key) || 0);
 }
 
-// Abstoßung und Mindestabstand nach Unähnlichkeit über eine Nachbarliste: Sie entsteht nur
-// neu, wenn sich ein Knoten seit dem letzten Aufbau um mehr als die halbe Reserve bewegt hat
-// — dann kann kein Paar von außerhalb in Reichweite gekommen sein —, und trägt die
-// Unähnlichkeit je Paar schon mit. Im Konzept suchte jeder Tick im Quadtree und fragte je
-// Paar eine Map ab; gemessen in Safaris Engine bei 2 000 Knoten dauerte das Layout dort
-// 6,6 s, hier 1,7 s — bei gleichen Kräften (Abweichung je Knoten unter 1e-4).
+// Unähnlichkeit: Knoten im Umkreis `p.reichweite` stoßen sich zusätzlich ab, je unähnlicher sie
+// sind (`p.unaehnlich`), und halten einen Mindestabstand bis `p.abstand`, der unter Ähnlichkeit
+// `p.abstand_ab` einsetzt und ABSTAND_SPANNE darunter sein volles Maß hat. Die Abstoßung allein
+// ging bei großer Reichweite in der Summe Hunderter Nachbarn unter („Robert Habeck" blieb neben
+// „Mord"); der Abstand ist eine Zwangsbedingung je Paar und hält, egal wie viele andere drücken
+// (fremde nächste Nachbarn 117 → 19 von 1 000 bei gleicher Kartengröße).
+//
+// Gerechnet über eine Nachbarliste: Sie entsteht nur neu, wenn sich ein Knoten seit dem letzten
+// Aufbau um mehr als die halbe Reserve bewegt hat — dann kann kein Paar von außerhalb in
+// Reichweite gekommen sein —, und trägt die Unähnlichkeit je Paar schon mit. Im Konzept suchte
+// jeder Tick im Quadtree und fragte je Paar eine Map ab; gemessen in Safaris Engine bei 2 000
+// Knoten dauerte das Layout dort 6,6 s, hier 1,7 s — bei gleichen Kräften (Abweichung je Knoten
+// unter 1e-4). Die Stärken kommen über `force.setzen(p)`; die Ähnlichkeitstabelle überlebt
+// das, damit ein neuer Reglerwert sie nicht noch einmal füllen muss.
 function kraftUnaehnlich() {
   const RESERVE = 300;
+  let p = null, listenRadius = 0;
   let knoten = [], A = new Int32Array(0), B = A, U = new Float32Array(0), anzahl = 0;
   let altX = null, altY = null, cache = null;
   function unaehnlich(a, b) {   // über die Aufbauten hinweg gemerkt; bis 3 000 Knoten als Tabelle
@@ -115,7 +122,7 @@ function kraftUnaehnlich() {
   // Alle Paare auf typisierten Arrays durchgehen statt im Quadtree zu suchen: Dessen Rückruf
   // je Knoten kostete gegen Ende des Layouts 40 ms je Aufbau bei 220 000 Paaren.
   function aufbauen() {
-    const n = knoten.length, R2 = (UNAEHNLICH.reichweite + RESERVE) ** 2;
+    const n = knoten.length, R2 = (listenRadius + RESERVE) ** 2;
     if (!cache && nodes.length <= 3000 && FIT.dim % 4 === 0) {
       cache = new Float32Array(nodes.length ** 2).fill(NaN);
       const idx = knoten.map(d => d.i);
@@ -142,28 +149,29 @@ function kraftUnaehnlich() {
     A = pa; B = pb; U = pu; anzahl = m; altX = X; altY = Y;
   }
   function force(alpha) {
+    if (!p || !listenRadius) return;
     const n = knoten.length, grenze = (RESERVE / 2) ** 2;
     let neu = !altX || altX.length !== n;
     for (let j = 0; !neu && j < n; j++) neu = (knoten[j].x - altX[j]) ** 2 + (knoten[j].y - altY[j]) ** 2 > grenze;
     if (neu) aufbauen();
-    const { kraft, reichweite: Rw, abstand, kosOben, kosSpanne } = UNAEHNLICH;
+    const { unaehnlich: kraft, reichweite: Rw, abstand, abstand_ab: kosOben } = p;
     // Abstoßung ∝ Unähnlichkeit · (1 − d/R) / d: die nächsten Nachbarn sortieren am stärksten
-    for (let p = 0; p < anzahl; p++) {
-      const a = knoten[A[p]], b = knoten[B[p]];
+    for (let q = 0; kraft && q < anzahl; q++) {
+      const a = knoten[A[q]], b = knoten[B[q]];
       let dx = a.x - b.x, dy = a.y - b.y;
       const d2 = dx * dx + dy * dy;
       if (d2 >= Rw * Rw) continue;
       let d = Math.sqrt(d2);
       if (d < 1) { const w = Math.random() * TAU; dx = Math.cos(w); dy = Math.sin(w); d = 1; }
-      const f = kraft * U[p] * alpha * (1 - d / Rw) / (d * d);
+      const f = kraft * U[q] * alpha * (1 - d / Rw) / (d * d);
       a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
     }
     // Mindestabstand auf der vorhergesagten Lage, wie forceCollide: 70 % des Fehlbetrags je
     // Tick, halb auf jeden
-    for (let p = 0; p < anzahl; p++) {
-      const u = (kosOben - (1 - U[p])) / kosSpanne;
+    for (let q = 0; abstand && q < anzahl; q++) {
+      const u = (kosOben - (1 - U[q])) / ABSTAND_SPANNE;
       if (u <= 0) continue;
-      const a = knoten[A[p]], b = knoten[B[p]];
+      const a = knoten[A[q]], b = knoten[B[q]];
       let dx = a.x + a.vx - b.x - b.vx, dy = a.y + a.vy - b.y - b.vy;
       const soll = a.r + b.r + 6 + abstand * Math.min(1, u), d2 = dx * dx + dy * dy;
       if (d2 >= soll * soll) continue;
@@ -174,6 +182,13 @@ function kraftUnaehnlich() {
     }
   }
   force.initialize = n => { knoten = n; altX = null; cache = null; };
+  force.setzen = neu => {
+    p = neu;
+    // Die Liste muss auch den Mindestabstand fassen: Bei kurzer Reichweite und großem Abstand
+    // lägen sonst Paare außerhalb, die sich noch abstoßen müssten (150 deckt zwei Radien).
+    listenRadius = Math.max(p.unaehnlich ? p.reichweite : 0, p.abstand ? p.abstand + 150 : 0);
+    altX = null;
+  };
   return force;
 }
 
@@ -196,16 +211,56 @@ function kantenGewichte(links) {
   }
 }
 
+// Federn der Kanten, in den ersten FRUEH_TICKS Schritten verstärkt. Der Schaden am Layout
+// entsteht beim Aufblähen: Abstoßung und Mindestabstand drücken die enge UMAP-Startlage auf das
+// Zwanzigfache auseinander, dabei zerreißen Cluster, und Knoten landen in fremden Gegenden.
+// Ziehen die Kanten in dieser Phase stärker, bleiben die Cluster als Einheit zusammen und
+// dehnen sich erst danach — dasselbe wie die „early exaggeration" von t-SNE. Gemessen 10/2026 an
+// 5 000 Knoten (×3, 40–60 Schritte): fremde nächste Nachbarn 1,2 → 0,7 %, in der Kartenmitte
+// 1,4–1,8 → 0,4–0,7 %, Treue der 10 Nachbarn 37 → 42 %, ein Viertel mehr Rechenzeit. Mehr
+// Bewegung half dagegen nicht: Rauschen blieb wirkungslos, weniger Reibung verschlechterte alles,
+// Nachheizen und langsameres Abkühlen halfen weniger und kosteten das Doppelte
+// (concepts/karten_layout/README.md). Die Phase hängt an Alpha statt an einem Zähler — so gilt
+// sie gleich, ob der Browser die Simulation laufen lässt oder der Mac sie Schritt für Schritt
+// treibt, und ein Neustart (Alpha 1) beginnt sie von vorn.
+const FRUEH_ALPHA = (1 - ALPHA_ZERFALL) ** (FRUEH_TICKS + 0.5);
+function kraftKanten(kanten) {
+  const link = d3.forceLink(kanten).id(d => d.i).distance(l => 30 + 170 * (1 - l.z));
+  let p = null, frueh = null;
+  function force(alpha) {
+    const jetzt = alpha > FRUEH_ALPHA;
+    if (jetzt !== frueh) {
+      frueh = jetzt;
+      const faktor = p.kantenzug * (frueh ? p.kantenzug_frueh : 1);
+      link.strength(l => Math.min(1, faktor * (0.08 + 0.72 * l.z * l.z)));
+    }
+    link(alpha);
+  }
+  force.initialize = (knoten, zufall) => link.initialize(knoten, zufall);
+  force.links = (...neu) => neu.length ? (link.links(...neu), force) : link.links();
+  force.setzen = neu => { p = neu; frueh = null; };
+  return force;
+}
+
+// Die einstellbaren Kräfte `p` (config.MAP_LAYOUT) in eine Simulation setzen. Der Browser tauscht
+// sie so in der bestehenden Simulation, statt sie neu anzulegen.
+function kraefteSetzen(sim, p) {
+  sim.force("link").setzen(p);
+  sim.force("charge").strength(-p.abstossung);
+  sim.force("unlike").setzen(p);
+  return sim;
+}
+
 // Die Simulation der Ebene, angehalten: Der Browser hängt Tick und Ende an und lässt sie
 // laufen, der Mac rechnet sie in einem Zug durch.
-function layoutSimulation(knoten, kanten, abstossung) {
-  return d3.forceSimulation(knoten).stop()
-    .force("link", d3.forceLink(kanten).id(d => d.i).distance(l => 30 + 170 * (1 - l.z)).strength(l => 0.08 + 0.72 * l.z * l.z))
-    .force("charge", d3.forceManyBody().strength(-abstossung).theta(0.95))
+function layoutSimulation(knoten, kanten, p) {
+  const sim = d3.forceSimulation(knoten).stop()
+    .force("link", kraftKanten(kanten))
+    .force("charge", d3.forceManyBody().theta(0.95))
     .force("unlike", kraftUnaehnlich())
     .force("collide", d3.forceCollide(d => d.r + 6))
     .force("x", d3.forceX(0).strength(SCHWERKRAFT))
     .force("y", d3.forceY(0).strength(SCHWERKRAFT))
-    // schnelleres Auskühlen (~110 statt ~245 Ticks) bei praktisch gleicher Ausdehnung
-    .alphaDecay(0.06);
+    .alphaDecay(ALPHA_ZERFALL);
+  return kraefteSetzen(sim, p);
 }

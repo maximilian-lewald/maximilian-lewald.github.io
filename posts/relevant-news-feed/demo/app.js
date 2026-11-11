@@ -1,3 +1,5 @@
+import { formatiere, formatiereZeile } from "./format.js";
+
 const main = document.getElementById("main");
 // Die öffentliche Demo (`news demo`) setzt data-demo: dieselbe App aus mitgelieferten
 // Dateien, ohne Bewerten, Uplift und Merge und ohne die Kacheln, die Vorlieben zeigen.
@@ -12,6 +14,7 @@ const ICON_UP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const ICON_DOWN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zM17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>`;
 const ICON_LEAF = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 18C5 9 12 5 20 5c0 8-6 14-15 13z"/><path d="M5 18c2-4 5-7 10-9"/></svg>`;
 const ICON_FLAME = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c-3.9 0-6.5-2.5-6.5-6 0-2.6 1.6-4.6 3-6.3C9.8 7.2 11 5.6 11 3c3.5 1.6 4.6 4.2 4.3 6.5.9-.3 1.7-1 2.2-2 1 1.5 1.9 3.3 1.9 5.5 0 3.5-3.5 8-7.4 8z"/></svg>`;
+const ICON_KOMMENTAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.4A8 8 0 1 1 21 12z"/></svg>`;
 const ICON_BOOKMARK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-4.2L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
 
 function route() {
@@ -21,6 +24,10 @@ function route() {
   document.querySelectorAll("#tabbar a").forEach(a =>
     a.classList.toggle("active", a.dataset.view === view));
   document.body.dataset.view = view;
+  // Sonst bliebe die Scrollhöhe des Feeds stehen, und Bewerten oder Statistik begännen
+  // unter der Tab-Leiste. Erst nach dem Umschalten: der Scroll-Listener sichert die
+  // Feed-Position nur, solange die Ansicht „feed" heißt; der Feed stellt sie selbst wieder her.
+  if (view !== "feed") window.scrollTo(0, 0);
   (views[view] || renderFeed)();
 }
 
@@ -198,7 +205,7 @@ const FEED_LEER = `<div class="empty">
 // In der Demo steht über der Filterleiste der Hinweis auf den eingefrorenen Stand; den
 // Text bringt deren index.html als <template> mit.
 const feedKopf = () => [
-  ...(DEMO ? [document.getElementById("demo-hinweis").content.cloneNode(true)] : []),
+  ...(DEMO ? [document.getElementById("demo-hinweis").content.cloneNode(true)] : [crawlHinweis()]),
   rubrikFilterLeiste(),
 ];
 
@@ -823,6 +830,27 @@ function whyToggle(card, meta, storyId) {
     });
 }
 
+// Bei Reddit trägt die Zusammenfassung die Stimmung der Kommentare als eigenen Absatz am
+// Ende („Kommentare: …", news/pipeline/summarize.py). Er steht nicht von selbst da, sondern
+// erst auf Antippen — Meinungen sollen nicht im selben Atemzug wie die Fakten gelesen werden.
+const KOMMENTARE_KENNUNG = "\n\nKommentare: ";
+
+function teileZusammenfassung(text) {
+  const i = (text || "").lastIndexOf(KOMMENTARE_KENNUNG);
+  return i < 0 ? [text || "", ""] : [text.slice(0, i), text.slice(i + KOMMENTARE_KENNUNG.length)];
+}
+
+function kommentarAbsatz(text) {
+  const knopf = el(`<button type="button" class="kommentare-knopf" aria-expanded="false">${ICON_KOMMENTAR}Comments</button>`);
+  const absatz = el(`<div class="kommentare" hidden>${formatiere(text)}</div>`);
+  knopf.onclick = () => {
+    absatz.hidden = !absatz.hidden;
+    knopf.classList.toggle("an", !absatz.hidden);
+    knopf.setAttribute("aria-expanded", String(!absatz.hidden));
+  };
+  return [knopf, absatz];
+}
+
 function storyCard(story, showDate = true) {
   const card = el(`<article class="card"></article>`);
   if (story.read) {
@@ -848,16 +876,19 @@ function storyCard(story, showDate = true) {
     meta.append(el(`<span class="positive-badge" title="Uplifting — positive development">${ICON_LEAF}</span>`));
   }
   body.append(meta);
-  body.append(el(`<h2>${esc(story.title)}</h2>`));
+  body.append(el(`<h2>${formatiereZeile(story.title)}</h2>`));
   if (story.summary) {
-    const summary = el(`<p class="summary clamp">${esc(story.summary)}</p>`);
+    const [haupt, kommentare] = teileZusammenfassung(story.summary);
+    const summary = el(`<div class="summary clamp">${formatiere(haupt)}</div>`);
     body.append(summary);
+    if (kommentare) body.append(...kommentarAbsatz(kommentare));
     // Tippen auf die Kachel klappt den vollen Text aus (Quellen-Links bleiben klickbar)
     body.onclick = e => {
       // `.source-chips` deckt Links **und** Sammelknöpfe ab; der Knopf ist kein <a>,
       // und ohne ihn klappte jedes Aufklappen einer Quelle die ganze Kachel um.
-      // Score-Pille und Warum-Panel gehören ebenso dazu — beide sind eigene Ziele.
-      if (e.target.closest("a, .source-chips, .why-knopf, .why-panel, .bookmark-btn")) return;
+      // Score-Pille, Warum-Panel und der Kommentar-Absatz gehören ebenso dazu — alle drei
+      // sind eigene Ziele.
+      if (e.target.closest("a, .source-chips, .why-knopf, .why-panel, .bookmark-btn, .kommentare-knopf, .kommentare")) return;
       if (summary.classList.contains("clamp")) klappeAuf(card, story);
       else klappeZu(card);
     };
@@ -964,24 +995,32 @@ const rateQueue = [];
 let rateTotal = 0;
 let rateMode = "like";
 
-// Gewichte der vier Ziehungskanäle (Zelle/Wasserstand, Unsicherheit, ohne Beleg,
-// Wiederholung) — je Artikel entscheidet der Server per Zufall nach diesen Gewichten.
-// Vorgabe 1:1:1:1. Die Wiederholung bekommt keine Marke auf der Karte: Wer weiß,
-// dass er schon einmal bewertet hat, bewertet nicht mehr blind.
+// Gewichte der Ziehungskanäle (Zelle/Wasserstand, Unsicherheit, ohne Beleg, Wiederholung,
+// Prüfung) — je Artikel entscheidet der Server per Zufall nach diesen Gewichten, Vorgabe
+// jeweils 1. Wiederholung und Prüfung bekommen keine Marke auf der Karte: Wer weiß, dass
+// er schon einmal bewertet hat, bewertet nicht mehr blind (die Altbewertung auf der
+// Prüfkarte wurde 11/2026 ausprobiert und verworfen). Ob die Prüfung gleich ausging,
+// meldet erst die Zeile unter dem Zähler.
 const MIX_KANAELE = [
-  ["Balanced", "thinnest (month × source) cell — the classic waterfall"],
-  ["Uncertain", "closest to score 0.5 — where the feed decision actually tips"],
-  ["Uncovered", "no rated article nearby — the model is extrapolating there"],
-  ["Repeat", "already rated ≥ 30 days ago — second rating kept separately, measures drift"],
+  ["Balanced", "Unrated article from the month × source with the fewest ratings — keeps ratings spread evenly over time and sources."],
+  ["Uncertain", "Unrated article the model scores closest to 0.5 — where the feed decision tips."],
+  ["Uncovered", "Unrated article with no rated article nearby — there the score is pure extrapolation."],
+  ["Repeat", "Article you rated at least 30 days ago, shown again blind — measures consistency and drift; your first rating stays."],
+  ["Recheck", "Rated article a model trained without it disagrees with most — likely mistakes; your new rating replaces the old one."],
 ];
+const mixAnteile = m => {
+  const summe = m.reduce((a, b) => a + b, 0);
+  return m.map(v => (summe ? Math.round(100 * v / summe) : 0));
+};
 function rateMix() {
   try {
     const m = JSON.parse(localStorage.rate_mix || "");
-    if (Array.isArray(m) && m.length === MIX_KANAELE.length - 1) m.push(1);   // Stand vor dem vierten Kanal
+    // Ein Mix von vor den späteren Kanälen bekommt deren Vorgabe dazu.
+    if (Array.isArray(m) && m.length >= 3) while (m.length < MIX_KANAELE.length) m.push(1);
     if (Array.isArray(m) && m.length === MIX_KANAELE.length
         && m.every(v => Number.isInteger(v) && v >= 0 && v <= 9) && m.some(v => v > 0)) return m;
   } catch { /* Vorgabe */ }
-  return [1, 1, 1, 1];
+  return MIX_KANAELE.map(() => 1);
 }
 const CHANNEL_LABEL = { unsicher: "uncertain", beleg: "uncovered" };
 
@@ -1005,9 +1044,15 @@ async function renderRate() {
       title="Draw mix">⚖ ${mix.join(":")}</button>` : ""}
     </div>
     ${rateMode === "like" ? `<div class="mix-panel" id="mixPanel" hidden>
-      ${MIX_KANAELE.map(([name, hilfe], i) => `<label title="${hilfe}">${name}
-        <input type="number" min="0" max="9" step="1" value="${mix[i]}" data-i="${i}"></label>`).join("")}
-      <span class="hint">relative draw weights per article</span>
+      <p class="mix-erklaerung">Each card comes from one of these sources, drawn at random in
+        proportion to the weights (0 = off, max 9). If a source has nothing left, the card
+        comes from Balanced instead.</p>
+      ${MIX_KANAELE.map(([name, hilfe], i) => `<div class="mix-zeile">
+        <label><span class="mix-name">${name}</span>
+          <input type="number" min="0" max="9" step="1" value="${mix[i]}" data-i="${i}">
+          <span class="mix-anteil" data-i="${i}">${mixAnteile(mix)[i]} %</span></label>
+        <div class="mix-hilfe">${hilfe}</div>
+      </div>`).join("")}
     </div>` : ""}
     <div class="rate-wrap">
     <div class="rate-stage" id="rateStage"></div>
@@ -1017,6 +1062,7 @@ async function renderRate() {
       <button class="rate-btn up" id="rateUp" title="${m.upT}">${m.up}</button>
     </div>
     <div class="rate-count hint" id="rateCount"></div>
+    <div class="rate-pruefung" id="ratePruefung" aria-live="polite"></div>
   </div>`;
   main.querySelectorAll("#rateSeg button").forEach(b => b.onclick = () => {
     if (rateMode === b.dataset.m) return;
@@ -1039,6 +1085,8 @@ async function renderRate() {
       localStorage.rate_mix = JSON.stringify(m);
       inp.value = m[Number(inp.dataset.i)];
       toggle.textContent = `⚖ ${m.join(":")}`;
+      const anteile = mixAnteile(m);
+      panel.querySelectorAll(".mix-anteil").forEach(s => { s.textContent = `${anteile[s.dataset.i]} %`; });
       rateGen++;                   // laufende Antworten aus dem alten Mix verwerfen
       rateQueue.length = 0;
       fillQueue();
@@ -1126,12 +1174,30 @@ async function voteCurrent(value) {
   const [url, payload] = rateMode === "positive"
     ? ["api/positive_label", { article_id: article.id, label: value === 1 ? 1 : 0 }]
     : ["api/rate", { article_id: article.id, rating: value, channel: article.channel }];
-  fetch(url, {
+  const antwort = fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-  }).catch(() => {});
+  });
+  antwort.catch(() => {});
+  if (article.channel === "pruefung") pruefungMelden(antwort);
   setTimeout(advance, 160);
+}
+
+let pruefungTimer = null;
+async function pruefungMelden(antwort) {
+  let d;
+  try { d = await (await antwort).json(); } catch { return; }
+  const zeile = main.querySelector("#ratePruefung");
+  if (!zeile || d.vorher == null) return;
+  const wort = v => (v === 1 ? "like" : "dislike");
+  const gleich = d.vorher === d.nachher;
+  zeile.textContent = gleich
+    ? `Recheck: same as before — ${wort(d.nachher)}`
+    : `Recheck: changed — was ${wort(d.vorher)}, now ${wort(d.nachher)}`;
+  zeile.className = `rate-pruefung ${gleich ? "gleich" : "geaendert"}`;
+  clearTimeout(pruefungTimer);
+  pruefungTimer = setTimeout(() => { zeile.textContent = ""; }, 5000);
 }
 
 function advance() {
@@ -1260,8 +1326,10 @@ function oeffneStory(story) {
   kopf.append(el(`<span class="score-pill" title="Predicted relevance">${Math.round(story.score * 100)} %</span>`));
   if (story.hot) kopf.append(el(`<span class="hot-badge" title="Big story — many sources, fresh momentum">${ICON_FLAME}Hot</span>`));
   inhalt.append(kopf);
-  inhalt.append(el(`<h2>${esc(story.title)}</h2>`));
-  inhalt.append(el(`<p class="summary">${esc(story.summary || "")}</p>`));
+  inhalt.append(el(`<h2>${formatiereZeile(story.title)}</h2>`));
+  const [haupt, kommentare] = teileZusammenfassung(story.summary);
+  inhalt.append(el(`<div class="summary">${formatiere(haupt)}</div>`));
+  if (kommentare) inhalt.append(...kommentarAbsatz(kommentare));
   inhalt.append(quellenChips(story.articles));
 
   sheet.querySelector(".sheet-zu").onclick = () => schliesseStory();
@@ -1385,105 +1453,67 @@ function legende(eintraege) {
 
 const LADEFEHLER = () => [el(`<div class="hint">Couldn't load.</div>`)];
 
-/* ---------- Kachel: Weltkarte der Berichterstattung ---------- */
-// Landraster aus globe.bin (2°-Zellen, gleiche Datei wie der Globus) als Punktgitter;
-// Zellen mit verorteten Schauplätzen der letzten 90 Tage färben sich blau, heller je
-// mehr Artikel dort spielen. Canvas statt SVG: rund 4000 Landzellen. Die Helligkeit
-// skaliert logarithmisch — linear skaliert wäre neben Berlin alles gleich dunkel.
+/* ---------- Crawl-Wächter ---------- */
+// Der Crawler legt nach jedem Durchgang einen Bericht ab (news/crawl/waechter.py); der
+// Feed zeigt Probleme als Zeile über der Filterleiste, die Statistik den ganzen Stand.
+// Die Texte entstehen hier aus den Feldern: der Bericht selbst ist deutsch, weil er auch
+// im Log und in der Menüleisten-App steht.
+const stunden = h => h == null ? "–"
+  : h < 48 ? `${Math.round(h).toLocaleString("de-DE")} h`
+  : `${Math.round(h / 24).toLocaleString("de-DE")} d`;
 
-function cssFarbe(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function crawlProblem(p) {
+  const prozent = x => `${Math.round(x * 100)} %`;
+  switch (p.art) {
+    case "crawler":
+      if (p.seit_h == null) return "Crawler: no pass recorded yet";
+      return p.fehler ? `Crawler: last pass aborted — ${p.fehler}` : `Crawler: no pass for ${stunden(p.seit_h)}`;
+    case "lauf": return `${p.quelle}: ${p.in_folge} failed runs in a row${p.fehler ? ` — ${p.fehler}` : ""}`;
+    case "ertrag": return `${p.quelle}: no new articles for ${stunden(p.seit_h)} (usually ≤ ${stunden(p.ueblich_h)})`;
+    case "text": return `${p.quelle}: only ${prozent(p.anteil_24h)} of new articles have text (usually ${prozent(p.anteil_sonst)})`;
+    case "leer": return `${p.quelle}: ${p.in_folge} runs in a row found nothing at all (usually ${prozent(p.leer_anteil)} of runs)`;
+    case "sammel": return `${p.quellen.length} sources at once (${p.quellen.join(", ")}) — likely crawler or proxy`;
+    default: return p.text || "";
+  }
 }
 
-function bauOrte(d, w) {
-  const p = d.places;
-  if (!p || !p.points || !p.points.length) return null;
-  const canvas = el(`<canvas style="width:100%;display:block"></canvas>`);
+// Bleibt unsichtbar, solange alles läuft — und wenn der Bericht nicht zu laden ist: Der
+// Feed soll an einer Statusabfrage nicht hängen.
+function crawlHinweis() {
+  const box = el(`<div class="crawl-hinweis" hidden></div>`);
+  api("api/stats/crawler").then(d => {
+    const probleme = d.crawler?.probleme || [];
+    if (!probleme.length) return;
+    box.innerHTML = `<b>Crawler</b> · ${probleme.map(p => esc(crawlProblem(p))).join(" · ")}
+      <a href="#stats">Details&nbsp;→</a>`;
+    box.hidden = false;
+  }).catch(() => {});
+  return box;
+}
 
-  // Gezeichnet wird auf die **gerade gemessene** Breite, und ein ResizeObserver
-  // zeichnet nach, sobald sich die Kachel umlegt: die Breite aus fuelleKachel stammt
-  // von vor dem Einfügen und war zu schmal gemessen — ein Canvas skaliert dann unscharf
-  // hoch, wo ein SVG verlustfrei mitwächst.
-  fetch("globe.bin").then(r => r.arrayBuffer()).then(puffer => {
-    const kopf = new DataView(puffer);
-    if (String.fromCharCode(kopf.getUint8(0), kopf.getUint8(1), kopf.getUint8(2),
-                            kopf.getUint8(3)) !== "GLB1") return;
-    const rows = kopf.getUint16(4, true), cols = kopf.getUint16(6, true);
-    const raster = new Uint8Array(puffer, 8);
-    const zeichne = () => {
-      const w = canvas.clientWidth || 300;
-      const h = Math.round(w / 2);
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.height = `${h}px`;
-      const ctx = canvas.getContext("2d");
-      ctx.scale(dpr, dpr);
-      const zx = w / cols, zy = h / rows;
-
-      // Artikelzahl je Rasterzelle. Liegt ein Zentroid im Wasser (Küstenstädte,
-      // Inselstaaten), wandert er auf die nächste Landzelle der Umgebung — eine
-      // blaue Kachel allein im Ozean sähe nach einem Fehler aus; ohne Land in
-      // Reichweite behält er seine Zelle.
-      const zaehler = new Map();
-      for (const pt of p.points) {
-        let i = Math.min(rows - 1, Math.max(0, Math.floor((90 - pt.lat) / 180 * rows)));
-        let j = ((Math.floor((pt.lon + 180) / 360 * cols) % cols) + cols) % cols;
-        if (!(raster[i * cols + j] & 0x80)) {
-          suche: for (let d = 1; d <= 2; d++) {
-            for (let di = -d; di <= d; di++) {
-              for (let dj = -d; dj <= d; dj++) {
-                const ni = i + di, nj = (((j + dj) % cols) + cols) % cols;
-                if (ni < 0 || ni >= rows || !(raster[ni * cols + nj] & 0x80)) continue;
-                i = ni; j = nj; break suche;
-              }
-            }
-          }
-        }
-        const k = i * cols + j;
-        zaehler.set(k, (zaehler.get(k) || 0) + pt.n);
-      }
-
-      ctx.fillStyle = cssFarbe("--border");
-      for (let i = 0; i < rows; i++) {
-        for (let j = 0; j < cols; j++) {
-          if (raster[i * cols + j] & 0x80) ctx.fillRect(j * zx, i * zy, zx * 0.72, zy * 0.72);
-        }
-      }
-      const nMax = Math.max(...zaehler.values());
-      ctx.fillStyle = cssFarbe("--accent");
-      for (const [k, n] of zaehler) {
-        ctx.globalAlpha = 0.25 + 0.75 * Math.log1p(n) / Math.log1p(nMax);
-        ctx.fillRect((k % cols) * zx, Math.floor(k / cols) * zy, zx * 0.72, zy * 0.72);
-      }
-      ctx.globalAlpha = 1;
-      // Namen nur für die größten Schauplätze, mit Halo gegen das Punktgitter.
-      ctx.font = "600 10.5px -apple-system, sans-serif";
-      ctx.textAlign = "center";
-      for (const pt of p.points.slice(0, 8)) {
-        const x = (pt.lon + 180) / 360 * w;
-        const y = (90 - pt.lat) / 180 * h;
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = cssFarbe("--surface");
-        ctx.strokeText(pt.name, x, y - zy);
-        ctx.fillStyle = cssFarbe("--text");
-        ctx.fillText(pt.name, x, y - zy);
-      }
-    };
-    let breite = 0;
-    new ResizeObserver(() => {
-      if (Math.abs(canvas.clientWidth - breite) < 5) return;
-      breite = canvas.clientWidth;
-      zeichne();
-    }).observe(canvas);
-    requestAnimationFrame(zeichne);
-  }).catch(e => console.warn("Weltkarte:", e));
-
-  const anteil = Math.round(100 * p.located / Math.max(1, p.total));
-  const hinweis = el(`<div class="hint" style="margin-top:8px">
-    ${p.located.toLocaleString("de-DE")} of ${p.total.toLocaleString("de-DE")} articles
-    located (${anteil} %) · last ${p.days} days · tile brightness = article count</div>`);
-  return [canvas, hinweis];
+function bauCrawler(d) {
+  const c = d.crawler;
+  if (!c || !c.quellen || !c.quellen.length) return null;
+  const zeit = c.durchgang ? new Date(c.durchgang).toLocaleString("de-DE",
+    { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–";
+  const wrap = el(`<div></div>`);
+  wrap.append(el(`<div class="crawl-kopf ${c.ok ? "gut" : "schlecht"}">${c.ok ? "All sources OK"
+    : `${c.probleme.length} problem${c.probleme.length > 1 ? "s" : ""}`} · last pass ${zeit}</div>`));
+  for (const p of c.probleme) wrap.append(el(`<div class="crawl-problem">${esc(crawlProblem(p))}</div>`));
+  for (const q of c.quellen) {
+    const punkt = q.gestoert ? "schlecht" : q.ok === false ? "warn" : "gut";
+    const text = q.n_24h ? ` · text ${q.nutzbar_24h}/${q.n_24h}` : "";
+    wrap.append(el(`<div class="kv"><span><i class="crawl-punkt ${punkt}"></i>${esc(q.quelle)}</span>
+      <b>${q.seit_h == null ? "–" : `${stunden(q.seit_h)} ago`}${text}</b></div>`));
+    if (q.brightdata_monat != null) {
+      wrap.append(el(`<div class="hint crawl-extra">Bright Data ${q.brightdata_monat.toLocaleString("de-DE")}
+        / ${q.brightdata_budget.toLocaleString("de-DE")} records this month
+        · ${q.ohne_kommentare} waiting for comments</div>`));
+    }
+  }
+  wrap.append(el(`<div class="hint" style="margin-top:8px">Time since the last new article and usable
+    texts among the last 24 h. Alarm at twice the usual gap of the past four weeks.</div>`));
+  return [wrap];
 }
 
 function renderStats() {
@@ -1506,6 +1536,7 @@ function renderStats() {
     .then(d => quellenKacheln.forEach(([p, bauen]) => fuelleKachel(p, d, bauen)))
     .catch(() => quellenKacheln.forEach(([p]) => fuelleKachel(p, null, LADEFEHLER)));
 
+  if (!DEMO) lade("Crawler", false, "crawler", bauCrawler);
   lade("Model metrics", false, "model", bauModell);
   if (!DEMO) lade("Keyword preferences", false, "keywords", bauKeywords);
   lade("Reading volume per weekday", false, "weekday", bauWochentage);
@@ -1518,7 +1549,6 @@ function renderStats() {
        (d, w) => [stackedChart(d.ratings_time, w), sourceLegend(d.ratings_time)]);
   lade("Article length per source (characters)", true, "length",
        (d, w) => [lengthChart(d.length_dist, w)]);
-  lade("Where the news happens", true, "places", bauOrte);
   if (DEMO) return;
 
   // Das Settings-Panel bringt sein eigenes Markup mit (details/summary) und ersetzt
@@ -1683,14 +1713,14 @@ const EINSTELL_TEXT = {
     "Stories whose heat (source coverage × momentum × novelty) clears this get the amber "
     + "highlight. Lower marks more.", 0.01],
   story_cut: ["Story cut",
-    "How far apart two articles may be and still share a story. Every pair inside a story "
-    + "has to clear this — not just neighbouring ones. Lower bundles less, but tighter.", 0.01],
+    "How far apart the articles of a story may be on average. Single pairs may lie further "
+    + "apart, the average may not. Lower bundles less, but tighter.", 0.01],
   story_time_weight: ["Weight of the time gap",
     "How much each day between two articles counts against them. 0 ignores time entirely; "
-    + "at 0,005 a ten-day gap costs as much as 0,05 of similarity.", 0.001],
-  story_source_penalty: ["Same-source surcharge",
-    "Extra distance for two texts from one newsroom. Two papers on one event is a signal, "
-    + "three texts from one paper on one topic is everyday business.", 0.01],
+    + "at 0,015 a ten-day gap costs as much as 0,15 of similarity.", 0.001],
+  story_tests_einzeln: ["Reviews stay single",
+    "Keeps reviews and comparisons (\u201eim Test\u201c, \u201eim Vergleich\u201c) out of stories. "
+    + "Off lets a review join the launch story of its product.", 1],
   world_marker: ["Markers on the globe", "How many stories are pinned.", 1],
   world_marker_je_region: ["Markers per world region",
     "The cap per round — keeps Europe and North America from filling the globe.", 1],
@@ -1757,14 +1787,142 @@ async function settingsPanel() {
     kopf.querySelector("h4").append(mark);
     marken[wirkung] = mark;
     panel.append(kopf);
+    if (wirkung === "stories" && stand.story_modi) panel.append(storyModus(stand, panel));
     for (const name of namen) panel.append(regler(name, stand, schreiben, vorschau));
     // Die Feed-Auswahl wirkt sofort — dann kann man auch sofort zeigen, was sie bewirkt.
     if (wirkung === "feed") panel.append(vorschauZeile);
   }
   offenAnzeigen();
+  panel.append(redditEinstellungen());
   // Die Vorschau zählt Stories über das NAS; zugeklappt sieht sie ohnehin niemand.
   panel.addEventListener("toggle", () => { if (panel.open) vorschau(); }, { once: true });
   return panel;
+}
+
+/* ---------- Reddit-Abos in den Einstellungen ---------- */
+// Der Crawler liest die Abos bei jedem Lauf aus der Datenbank (meta.reddit_abos), eine
+// Änderung hier wirkt also mit dem nächsten Abruf, ohne Rebuild. Je Subreddit steht, was
+// die letzte Liste brachte — ein vertipptes oder gesperrtes Subreddit fällt so auf, statt
+// still nichts zu liefern. Entfernen ist zweistufig, gegen Fehltipper.
+async function redditSenden(werte) {
+  const resp = await fetch("api/reddit", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(werte),
+  });
+  const d = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(d.detail || `HTTP ${resp.status}`);
+  return d;
+}
+
+function redditEinstellungen() {
+  const box = el(`<div class="settings-gruppe reddit-abos"><h4>Reddit</h4>
+    <div class="hint">Top posts of the day from these subreddits. Changes apply with the next fetch.</div>
+    <div class="reddit-liste"><div class="panel-laedt"></div></div>
+    <form class="reddit-neu">
+      <input type="text" name="sub" placeholder="Subreddit link or r/name" autocomplete="off"
+             autocapitalize="off" spellcheck="false" aria-label="Subreddit">
+      <select name="rubrik" aria-label="Topic"></select>
+      <button type="submit">Add</button>
+    </form>
+    <div class="hint reddit-meldung" hidden></div>
+    <div class="reddit-takt"></div>
+    <div class="hint reddit-verbrauch"></div>
+  </div>`);
+  const liste = box.querySelector(".reddit-liste");
+  const form = box.querySelector(".reddit-neu");
+  const meldung = box.querySelector(".reddit-meldung");
+  let stand = null;
+
+  const melde = text => { meldung.textContent = text || ""; meldung.hidden = !text; };
+  const rubrikOptionen = gewaehlt => [`<option value="">— topic —</option>`,
+    ...stand.rubriken.map(r => `<option${r === gewaehlt ? " selected" : ""}>${esc(r)}</option>`)].join("");
+  const zeit = iso => new Date(iso).toLocaleString("de-DE",
+    { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const senden = async werte => {
+    try {
+      stand = await redditSenden(werte);
+      melde("");
+      zeichnen();
+    } catch (e) {
+      melde(`Couldn't save: ${e.message}`);
+    }
+  };
+
+  function verbrauchZeigen(topN, stunden) {
+    // Die Listen kosten fest: je Abruf top_n Datensätze je Subreddit, auch für bekannte
+    // Beiträge. Die Kommentare kommen je neuem Beitrag dazu und stehen im Monatsstand.
+    const listen = Math.round(stand.subreddits.length * topN * (24 / stunden) * 30);
+    box.querySelector(".reddit-verbrauch").textContent =
+      `Bright Data this month: ${stand.brightdata_monat.toLocaleString("de-DE")} of `
+      + `${stand.brightdata_budget.toLocaleString("de-DE")} records (cap) · lists alone ≈ `
+      + `${listen.toLocaleString("de-DE")} per month with these settings · `
+      + `${stand.ohne_kommentare.toLocaleString("de-DE")} posts waiting for comments`;
+  }
+
+  function takt(feld, titel, einheit, erklaerung) {
+    const [lo, hi] = stand.grenzen[feld];
+    const zeile = el(`<div class="regler">
+      <label><span>${titel}</span><b>${stand[feld]}${einheit}</b></label>
+      <input type="range" min="${lo}" max="${hi}" step="1" value="${stand[feld]}" aria-label="${titel}">
+      <div class="hint">${erklaerung}</div></div>`);
+    const wert = zeile.querySelector("b");
+    const schieber = zeile.querySelector("input");
+    schieber.addEventListener("input", () => {
+      wert.textContent = `${schieber.value}${einheit}`;
+      const r = box.querySelectorAll(".reddit-takt input");
+      verbrauchZeigen(Number(r[0].value), Number(r[1].value));
+    });
+    schieber.addEventListener("change", () => senden({ [feld]: Number(schieber.value) }));
+    return zeile;
+  }
+
+  function zeichnen() {
+    liste.replaceChildren();
+    if (!stand.subreddits.length) liste.append(el(`<div class="hint">No subreddits yet.</div>`));
+    for (const sub of stand.subreddits) {
+      const lauf = sub.lauf;
+      const status = !lauf ? "not fetched yet"
+        : lauf.fehler && !lauf.beitraege ? `error: ${lauf.fehler}`
+        : `${lauf.beitraege} posts, ${lauf.neu} new · ${zeit(lauf.zeit)}`;
+      const zeile = el(`<div class="reddit-zeile">
+        <span class="reddit-name">r/${esc(sub.name)}</span>
+        <select aria-label="Topic of r/${esc(sub.name)}">${rubrikOptionen(sub.rubrik)}</select>
+        <span class="hint${lauf && lauf.fehler && !lauf.beitraege ? " reddit-fehler" : ""}">${esc(status)}</span>
+        <button type="button" class="reddit-weg" title="Remove r/${esc(sub.name)}">✕</button>
+      </div>`);
+      zeile.querySelector("select").onchange = e => senden({ add: sub.name, rubrik: e.target.value });
+      const weg = zeile.querySelector(".reddit-weg");
+      weg.onclick = () => {
+        if (!weg.classList.contains("sicher")) {
+          weg.classList.add("sicher");
+          weg.textContent = "Remove?";
+          setTimeout(() => { weg.classList.remove("sicher"); weg.textContent = "✕"; }, 4000);
+          return;
+        }
+        senden({ remove: sub.name });
+      };
+      liste.append(zeile);
+    }
+    form.elements.rubrik.innerHTML = rubrikOptionen("");
+    box.querySelector(".reddit-takt").replaceChildren(
+      takt("top_n", "Posts per subreddit", "",
+           "Top posts of the day per fetch. Each fetch costs this many records per subreddit, known posts included."),
+      takt("stunden", "Fetch every", " h",
+           "Hours between two fetches of the lists; comments follow with the next crawl, at the earliest three hours after posting."));
+    verbrauchZeigen(stand.top_n, stand.stunden);
+  }
+
+  form.onsubmit = e => {
+    e.preventDefault();
+    const sub = form.elements.sub.value.trim();
+    if (!sub) return;
+    senden({ add: sub, rubrik: form.elements.rubrik.value }).then(() => {
+      if (meldung.hidden) form.reset();
+    });
+  };
+
+  api("api/reddit").then(d => { stand = d; zeichnen(); })
+    .catch(() => liste.replaceChildren(el(`<div class="hint">Couldn't load.</div>`)));
+  return box;
 }
 
 // Live-Vorschau: wie viele Stories der Feed bei der eingestellten Schwelle und Fensterweite
@@ -1790,11 +1948,68 @@ const vorschau = entwurf(async () => {
     + ` · ${r.articles.toLocaleString("de-DE")} articles · last ${r.days} days`;
 }, 250);
 
+// Zwei Voreinstellungen der Story-Bündelung (config.STORY_MODI). Sie setzen nur die Regler
+// darunter — gespeichert wird wie beim Ziehen über deren eigenes input-Ereignis, und wer
+// danach einen Regler verstellt, steht bei keiner der beiden mehr.
+const STORY_MODUS_TEXT = {
+  tight: ["Tight", "One card per event. Fewer wrong merges, but long-running stories and "
+    + "reviews of a launch can end up as separate cards."],
+  broad: ["Broad", "Bundles long-running stories and reviews with their launch — about a fifth "
+    + "fewer feed cards, at the price of more cards that mix two related events."],
+};
+
+function storyModus(stand, panel) {
+  const modi = Object.entries(stand.story_modi);
+  const box = el(`<div class="regler story-modus">
+    <label><span>Grouping</span></label>
+    <div class="segmented">${modi.map(([m]) =>
+      `<button type="button" data-m="${m}">${(STORY_MODUS_TEXT[m] || [m])[0]}</button>`).join("")}</div>
+    <div class="hint"></div></div>`);
+  const hinweis = box.querySelector(".hint");
+  const feld = n => panel.querySelector(`input[data-name="${n}"]`);
+  const wertVon = f => f.type === "checkbox" ? Number(f.checked) : Number(f.value);
+  function markieren() {
+    const aktiv = modi.find(([, werte]) => Object.entries(werte).every(([n, v]) => {
+      const f = feld(n);
+      return f && Math.abs(wertVon(f) - v) < 1e-9;
+    }))?.[0];
+    box.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.m === aktiv));
+    hinweis.textContent = aktiv ? (STORY_MODUS_TEXT[aktiv] || ["", ""])[1]
+      : "Custom — the sliders below differ from both presets.";
+  }
+  box.querySelectorAll("button").forEach(b => b.onclick = () => {
+    for (const [n, v] of Object.entries(stand.story_modi[b.dataset.m])) {
+      const f = feld(n);
+      if (!f) continue;
+      if (f.type === "checkbox") f.checked = Boolean(v); else f.value = v;
+      f.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+  panel.addEventListener("input", markieren);
+  // Die Regler hängen erst nach dieser Zeile im Panel.
+  queueMicrotask(markieren);
+  return box;
+}
+
 function regler(name, stand, schreiben, vorschau) {
   const spec = stand.spec[name];
   const [titel, erklaerung, schritt] = EINSTELL_TEXT[name] || [name, "", 0.01];
-  // Schwellen immer zweistellig: „0,7" neben „0,66" liest sich wie ein anderer Maßstab.
-  const zeige = v => spec.integer ? Number(v).toLocaleString("de-DE") : dez2(Number(v));
+  if (spec.integer && spec.min === 0 && spec.max === 1) {
+    const zeile = el(`<div class="regler schalter">
+      <label><span>${titel}</span><input type="checkbox" aria-label="${titel}"
+        ${stand.settings[name] ? "checked" : ""}></label>
+      <div class="hint">${erklaerung}</div></div>`);
+    const box = zeile.querySelector("input");
+    box.dataset.name = name;
+    box.addEventListener("input", () => schreiben({ [name]: Number(box.checked) }));
+    return zeile;
+  }
+  // Schwellen mindestens zweistellig: „0,7" neben „0,66" liest sich wie ein anderer
+  // Maßstab. Feinere Regler zeigen so viele Stellen wie ihr Schritt — mit zwei stand das
+  // Zeitgewicht 0,015 als „0,01" da.
+  const stellen = Math.max(2, (String(schritt).split(".")[1] || "").length);
+  const zeige = v => spec.integer ? Number(v).toLocaleString("de-DE")
+    : Number(v).toFixed(stellen).replace(".", ",");
   const zeile = el(`<div class="regler">
     <label><span>${titel}</span><b>${zeige(stand.settings[name])}</b></label>
     <input type="range" min="${spec.min}" max="${spec.max}" step="${schritt}"
@@ -1838,9 +2053,9 @@ function updatedLine(iso) {
 const SOURCE_COLORS = {
   heise: "#6ba3f8", taz: "#e5787d",
   arstechnica: "#e8a54b", netzpolitik: "#a78bfa",
-  restofworld: "#4ec98d", dialogueearth: "#45c2c8", sixthtone: "#d977c9",
+  restofworld: "#4ec98d", dialogueearth: "#45c2c8",
   bbc: "#9dd14f", sciencenews: "#57c96a", tagesschau: "#e0d155",
-  youtube: "#f2645a", zeit: "#c08552",
+  youtube: "#f2645a", zeit: "#c08552", reddit: "#ff4500",
 };
 
 function sourceLegend(data) {

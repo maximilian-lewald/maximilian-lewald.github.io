@@ -59,19 +59,24 @@ body {
   opacity: 0; transform: translateY(-60px);
   pointer-events: none;
 }
-#ptr svg { width: 40px; height: 40px; display: block; }
+/* 100 %, nicht 40 px: Bei border-box bleiben innen 38 px, ein 40er-SVG lief über, und
+   Safari richtet Überlauf am Anfang statt mittig aus — der Ring saß 1 px rechts unten. */
+#ptr svg { width: 100%; height: 100%; display: block; }
+/* Drehpunkt am eigenen Mittelpunkt statt an Prozenten der Viewbox, die WebKit für
+   SVG-Elemente nicht überall gleich auflöst. Kreis und Pfeil sind um (20, 20) gebaut. */
+.ptr-spur, .ptr-bogen, .ptr-pfeil { transform-box: fill-box; transform-origin: center; }
 .ptr-spur { fill: none; stroke: var(--border); stroke-width: 2.5; }
 /* Kreisumfang 2πr = 87,96 bei r = 14 — derselbe Wert steht als PTR_UMFANG in app.js. */
 .ptr-bogen {
   fill: none; stroke: var(--text-dim); stroke-width: 2.5; stroke-linecap: round;
   stroke-dasharray: 88; stroke-dashoffset: 88;
-  transform: rotate(-90deg); transform-origin: 50% 50%;
+  transform: rotate(-90deg);
   transition: stroke .2s;
 }
 .ptr-pfeil {
   fill: none; stroke: var(--text-dim); stroke-width: 2.2;
   stroke-linecap: round; stroke-linejoin: round;
-  transform-origin: 50% 50%; transition: stroke .2s;
+  transition: stroke .2s;
 }
 /* Nur beim Loslassen animiert — am Finger müssen Indikator und Inhalt ohne
    Verzögerung folgen. */
@@ -115,7 +120,8 @@ main.glatt { transition: transform .3s cubic-bezier(.2,.9,.3,1); }
 .tab-icon { display: inline-flex; }
 .tab-icon svg { width: 18px; height: 18px; display: block; }
 
-main { max-width: 1200px; margin: 0 auto; padding: 82px 20px 60px; }
+/* Die Tab-Pille steht unter der Safe Area (iPad als PWA: Statusleiste), der Inhalt muss mit. */
+main { max-width: 1200px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 82px) 20px 60px; }
 
 @media (max-width: 720px) {
   /* Gleiche schwebende Pille wie am Desktop — nur unten mittig statt oben.
@@ -170,10 +176,32 @@ main { max-width: 1200px; margin: 0 auto; padding: 82px 20px 60px; }
 .card-body { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
 .card h2 { font-size: 17px; font-weight: 650; letter-spacing: -.01em; line-height: 1.35; }
 .card .summary { font-size: 14.5px; color: var(--text); opacity: .92; }
+/* Formatierte Zusammenfassungen (web/format.js): Absätze, Code, Formeln */
+:is(.summary, .kommentare) > * + * { margin-top: .55em; }
+:is(.summary, .kommentare, h2) code {
+  font: .88em ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--surface-2); border-radius: 4px; padding: 0 .3em;
+}
+math { font-size: 1.08em; }
+math[display="block"] { margin: .25em 0; padding: .3em 0; max-width: 100%; overflow: auto hidden; }
+/* Zugeklappt fließt alles inline: line-clamp kürzt nur Inline-Inhalt und schnitte über
+   Absätze hinweg gar nicht. */
 .card .summary.clamp {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* Mit einer MathML-Formel im Text bemisst WebKit die gekürzte Box falsch: gemessen 12,7
+   statt 3 Zeilen bei einer Formel am Ende — die Karte sah aufgeklappt aus und ließ sich
+   scheinbar nicht mehr zuklappen — und 0,75 bei einer am Anfang. Dort kürzt deshalb eine
+   feste Höhe, und statt des „…“ läuft Zeile 3 nach rechts aus. */
+.card .summary.clamp:has(math) {
+  display: block; -webkit-line-clamp: none; max-height: 3lh;
+  mask: linear-gradient(#000 0 0) top / 100% 2lh no-repeat,
+        linear-gradient(to right, #000 75%, transparent) top 2lh left 0 / 100% 1lh no-repeat;
+}
+.card .summary.clamp p { display: inline; margin: 0; }
+.card .summary.clamp > * + *::before { content: " "; }
+.card .summary.clamp math { display: inline; display: inline math; margin: 0; }
 .card .teaser { font-size: 14px; color: var(--text-dim); }
 .card-meta {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -224,6 +252,22 @@ main { max-width: 1200px; margin: 0 auto; padding: 82px 20px 60px; }
   padding: 12px 16px; margin: 2px 0 12px; font-size: 13.5px; line-height: 1.5; color: var(--text-dim);
 }
 .demo-hinweis b { color: var(--text); }
+/* Crawl-Wächter: Zeile über dem Feed, nur bei Problemen */
+.crawl-hinweis {
+  background: var(--surface); border: 1px solid var(--hot); border-radius: var(--radius-sm);
+  padding: 10px 14px; margin: 2px 0 10px; font-size: 13px; line-height: 1.45; color: var(--text-dim);
+}
+.crawl-hinweis b { color: var(--hot); }
+.crawl-hinweis a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.crawl-kopf { font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
+.crawl-kopf.gut { color: var(--like); }
+.crawl-kopf.schlecht { color: var(--hot); }
+.crawl-problem { font-size: 12.5px; color: var(--text-dim); margin-bottom: 5px; }
+.crawl-punkt { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 7px; background: var(--like); }
+.crawl-punkt.warn { background: var(--hot); }
+.crawl-punkt.schlecht { background: var(--dislike); }
+.crawl-extra { margin: -2px 0 4px 15px; }
 .demo-hinweis a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
 .filter-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -386,13 +430,17 @@ main { max-width: 1200px; margin: 0 auto; padding: 82px 20px 60px; }
   border-radius: 10px; padding: 6px 10px; font-size: 13px; cursor: pointer;
 }
 .mix-panel {
-  display: flex; justify-content: center; align-items: center; gap: 14px;
-  flex-wrap: wrap; margin: 0 auto 16px; max-width: 640px; font-size: 13px;
-  color: var(--muted);
+  display: flex; flex-direction: column; gap: 10px; margin: 0 auto 18px; max-width: 640px;
+  font-size: 13px; color: var(--text-dim); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px;
 }
 /* `hidden` allein verliert gegen display:flex — dieselbe Falle wie .source-chips */
 .mix-panel[hidden] { display: none; }
-.mix-panel label { display: flex; align-items: center; gap: 6px; }
+.mix-erklaerung { margin: 0; }
+.mix-zeile label { display: flex; align-items: center; gap: 8px; }
+.mix-name { color: var(--text); font-weight: 600; min-width: 6.5em; }
+.mix-anteil { font-variant-numeric: tabular-nums; min-width: 3.5em; }
+.mix-hilfe { margin-top: 2px; line-height: 1.4; }
 .mix-panel input {
   width: 3.2em; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px;
@@ -443,6 +491,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 82px 20px 60px; }
 }
 .rate-skip:hover { color: var(--text); background: var(--surface-2); }
 .rate-count { text-align: center; margin-top: 14px; }
+.rate-pruefung { text-align: center; margin-top: 4px; min-height: 1.3em; font-size: 13px; }
+.rate-pruefung.gleich { color: var(--text-dim); }
+.rate-pruefung.geaendert { color: var(--accent); font-weight: 600; }
 
 .skeleton { border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); height: 320px; position: relative; overflow: hidden; }
 .skeleton::after {
@@ -630,6 +681,41 @@ body[data-view="map"] main::after {
 .kw-row b.neg { color: var(--dislike); }
 .kw-more { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 8px; cursor: pointer; }
 
+/* Reddit: Kommentar-Stimmung erst auf Antippen (Feed-Karte und Globus-Blatt) */
+.kommentare-knopf {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
+  border-radius: 99px; padding: 4px 11px; font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.kommentare-knopf svg { width: 14px; height: 14px; }
+.kommentare-knopf.an { color: var(--accent); border-color: var(--accent); }
+.kommentare {
+  font-size: 14px; color: var(--text-dim);
+  border-left: 2px solid var(--border); padding-left: 10px;
+}
+.sheet-inhalt .kommentare-knopf { margin-top: 10px; }
+.sheet-inhalt .kommentare { margin-top: 8px; }
+
+/* Reddit-Abos im Settings-Panel */
+.reddit-zeile {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 0; border-bottom: 1px solid var(--border);
+}
+.reddit-name { font-weight: 600; font-size: 14px; min-width: 8.5em; }
+.reddit-zeile .hint { flex: 1 1 12em; font-size: 12.5px; }
+.reddit-fehler { color: var(--dislike); }
+.reddit-abos select, .reddit-abos input[type="text"], .reddit-abos button {
+  font: inherit; font-size: 13px; color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 10px; padding: 5px 9px;
+}
+.reddit-abos button { cursor: pointer; }
+.reddit-weg { color: var(--text-dim); }
+.reddit-weg.sicher { color: var(--dislike); border-color: var(--dislike); }
+.reddit-neu { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
+.reddit-neu input[type="text"] { flex: 1 1 14em; min-width: 0; }
+.reddit-meldung { color: var(--dislike); }
+.reddit-verbrauch { margin-top: 10px; font-size: 12.5px; }
+
 /* ---------- Settings-Panel (unten in der Statistik) ---------- */
 /* Zugeklappt: neun Regler am Stück drängen die Diagramme darüber aus dem Blick. */
 .panel.settings summary {
@@ -667,6 +753,9 @@ body[data-view="map"] main::after {
 }
 .regler label b { font-variant-numeric: tabular-nums; color: var(--accent); }
 .regler .hint { font-size: 12.5px; margin-top: 2px; }
+.story-modus .segmented { margin: 6px 0 0; }
+.regler.schalter label { align-items: center; }
+.regler.schalter input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
 .regler input[type="range"] {
   -webkit-appearance: none; appearance: none; width: 100%; height: 26px;
   background: transparent; margin: 2px 0;

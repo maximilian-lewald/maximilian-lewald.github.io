@@ -45,7 +45,9 @@
     if (pfad.startsWith("stats/")) return datei(`stats/${pfad.slice(6)}`);
     if (pfad.startsWith("map_teil/")) return datei(`map/${pfad.slice(9)}`);
     if (pfad === "map_artikel") return (await datei("map/artikel"))[+q.get("i")];
-    if (pfad === "map_layout") return datei(`map/layout_${+q.get("version")}_${+q.get("rep")}`);
+    // Ein Layout, zu den Kräften, mit denen es gerechnet ist — die Regler sind ausgeblendet
+    if (pfad === "map_layout_param") return (await datei("map/layout")).param;
+    if (pfad === "map_layout") return datei("map/layout");
   }
 
   window.fetch = async (eingabe, init = {}) => {

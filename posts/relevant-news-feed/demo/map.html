@@ -2,7 +2,7 @@
 <html lang="en" data-demo>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://cdn.arstechnica.net https://cdn.netzpolitik.org https://dialogue.earth https://heise.cloudimg.io https://ichef.bbci.co.uk https://image5.sixthtone.com https://images.tagesschau.de https://img.zeit.de https://ocdn.eu https://restofworld.org https://taz.de https://www.sciencenews.org; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://cdn.arstechnica.net https://cdn.netzpolitik.org https://dialogue.earth https://heise.cloudimg.io https://ichef.bbci.co.uk https://images.tagesschau.de https://img.zeit.de https://ocdn.eu https://restofworld.org https://taz.de https://www.sciencenews.org; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Keyword map</title>
@@ -65,11 +65,28 @@
     border-radius: 16px; padding: 8px 12px; font-size: 13px; color: var(--m-hell); display: none;
     max-width: 260px; }
   #tip small { color: var(--m-dim); }
+  /* Der Kopf steht fest, nur der Inhalt scrollt: Einklappen bleibt auch tief in den Artikeln
+     erreichbar. Eingeklappt bleibt allein der Kopf stehen. */
   #panel { position: fixed; top: calc(60px + var(--oben));
-    right: 16px; width: 300px; max-height: calc(100% - 90px - var(--oben));
-    overflow-y: auto; background: var(--m-flaeche2); border: 1px solid var(--m-rand); border-radius: 26px;
-    padding: 18px; display: none; -webkit-backdrop-filter: blur(16px) saturate(160%);
+    right: 16px; width: 300px; max-height: calc(100% - 90px - var(--oben)); flex-direction: column;
+    background: var(--m-flaeche2); border: 1px solid var(--m-rand); border-radius: 26px;
+    padding: 0 18px 18px; display: none; -webkit-backdrop-filter: blur(16px) saturate(160%);
     backdrop-filter: blur(16px) saturate(160%); }
+  #panel .kopf { display: flex; align-items: flex-start; padding-top: 18px; margin-right: -10px;
+    cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #panel .kopf h2 { flex: 1; min-width: 0; }
+  #panel .kopf button { flex: none; width: 30px; height: 30px; margin-top: -3px; padding: 0;
+    display: grid; place-items: center; background: none; border: none; cursor: pointer;
+    color: var(--m-leise); font-size: 16px; }
+  #panel .kopf button:hover { color: var(--m-hell); }
+  /* Der Pfeil zeigt, wohin das Fenster beim Tippen geht: oben rechts klappt es nach oben ein */
+  #panel .klapp svg { transform: rotate(180deg); transition: transform .2s; }
+  #panel .griff { display: none; }
+  #panel .inhalt { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  #panel.eingeklappt { cursor: pointer; touch-action: none; }
+  #panel.eingeklappt .inhalt { display: none; }
+  #panel.eingeklappt h2 { margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #panel.eingeklappt .klapp svg { transform: none; }
   #panel h2 { font-size: 17px; font-weight: 600; color: var(--m-hell); margin-bottom: 4px; }
   #panel .meta { font-size: 12.5px; color: var(--m-dim); margin-bottom: 12px; }
   #panel .balken { height: 5px; border-radius: 3px; background: var(--m-rand); margin: 6px 0 14px; overflow: hidden; }
@@ -83,8 +100,6 @@
     border-radius: 999px; padding: 4px 11px; margin: 0 5px 5px 0; font-size: 12.5px;
     color: var(--m-text2); cursor: pointer; }
   #panel .nachbar:hover { border-color: var(--m-rand-aktiv); color: var(--m-hell); }
-  #panel .zu { position: absolute; top: 10px; right: 12px; cursor: pointer; color: var(--m-leise);
-    font-size: 16px; background: none; border: none; }
   #panel .aus { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--m-rand); }
   #panel .aus button { font: inherit; font-size: 12.5px; border-radius: 7px; cursor: pointer;
     padding: 7px 12px; background: var(--m-chip); border: 1px solid var(--m-chip-rand); color: var(--m-dim); }
@@ -155,6 +170,14 @@
   #settings .s-bau { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--m-rand);
     font-size: 11.5px; line-height: 1.45; color: var(--m-dim); }
   #settings .s-bau.offen { color: var(--m-warn); }
+  #settings .layout .s-kopf { margin: 0 0 12px; }
+  #settings .layout input + .s-hinweis { margin-bottom: 12px; }
+  #settings .s-zurueck { margin-top: 2px; }
+  /* Kennzahlen des gezeigten Layouts, daneben die des vorigen */
+  #settings .s-zahlen { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 10px;
+    margin-top: 6px; font-variant-numeric: tabular-nums; }
+  #settings .s-zahlen span:nth-child(3n+2) { color: var(--m-text2); text-align: right; }
+  #settings .s-zahlen span:nth-child(3n) { color: var(--m-leise); text-align: right; }
   /* Regler, die nur für eine der beiden Projektionen gelten */
   body[data-proj="kugel"] .nur-flach, body[data-proj="flach"] .nur-kugel { display: none; }
   /* Themenverteilung der Umgebung im Knoten-Panel: der Balken liegt hinter dem Text,
@@ -167,7 +190,9 @@
   #panel .umg i { position: relative; float: right; font-style: normal; color: var(--m-dim);
     font-variant-numeric: tabular-nums; }
   @media (max-width: 720px) {
-    #zeitleiste { bottom: calc(68px + var(--sab, env(safe-area-inset-bottom, 0px)));
+    /* Die Zeitleiste steht knapp über dem eingeklappten Knoten-Fenster: mit Auswahl bleibt
+       sie so bedienbar, aufgeklappt deckt das Fenster sie zu. */
+    #zeitleiste { bottom: calc(78px + var(--sab, env(safe-area-inset-bottom, 0px)));
       left: 16px; right: 16px; transform: none; }
     #sliderwrap { width: auto; flex: 1; }
     #ui button { padding: 8px 13px; font-size: 12.5px; }
@@ -177,6 +202,11 @@
     #panel { top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: 52%;
       border-radius: 32px 32px 0 0; border-bottom: none;
       padding-bottom: calc(18px + var(--sab, env(safe-area-inset-bottom, 0px))); }
+    /* Blatt am unteren Rand: der Griff zeigt, dass es sich wischen lässt, eingeklappt wird nach unten */
+    #panel .griff { display: block; position: absolute; top: 7px; left: 50%; width: 36px; height: 5px;
+      margin-left: -18px; border-radius: 3px; background: var(--m-tick); }
+    #panel .klapp svg { transform: none; }
+    #panel.eingeklappt .klapp svg { transform: rotate(180deg); }
     /* die Button-Reihe kann zweizeilig umbrechen — Legende und Settings darunter beginnen */
     #cluster-legende { top: calc(106px + var(--oben)); }
     #settings { top: calc(106px + var(--oben));
@@ -186,7 +216,7 @@
                        - var(--sab, env(safe-area-inset-bottom, 0px))); }
     /* eingebettet in die App: Suche, Zeitleiste und Panel weichen der Tab-Pille aus */
     .embedded #suche { bottom: calc(80px + var(--sab, 0px)); }
-    .embedded #zeitleiste { bottom: calc(136px + var(--sab, 0px)); }
+    .embedded #zeitleiste { bottom: calc(146px + var(--sab, 0px)); }
     .embedded #panel { padding-bottom: calc(86px + var(--sab, 0px)); }
   }
   @media (min-width: 721px) {
@@ -211,7 +241,8 @@
   #vorschlaege .hinweis { padding: 7px 12px; color: var(--m-leise); font-size: 12px; }
   #panel .suche-weg { color: var(--m-link); cursor: pointer; text-decoration: underline; }
   /* Öffentliche Demo (news demo): keine Vorlieben, nichts, was den Bau oder die Karte ändert */
-  [data-demo] [data-m="like"], [data-demo] #settings .bau, [data-demo] #panel .aus { display: none; }
+  [data-demo] [data-m="like"], [data-demo] #settings .bau, [data-demo] #settings .layout,
+  [data-demo] #panel .aus { display: none; }
 </style>
 </head>
 <body>
@@ -260,14 +291,47 @@
     <div class="s-hinweis">Mixed blends the source colours by share — pale means evenly
       shared. Dominant shows the strongest source only.</div>
   </div>
-  <div class="s-gruppe nur-flach">
-    <span class="s-label">Node repulsion <span class="s-wert" id="repWert"></span></span>
-    <input id="repulsion" type="range" min="60" max="400" step="10">
-    <div class="s-hinweis">Higher = nodes push apart more, so clusters spread out and the
-      structure becomes easier to see. Default 170. On release the map is laid out afresh from
-      its starting point, so earlier settings leave no trace. The sphere needs no equivalent: its layout is
-      final, because a repulsion with no edge to push against just spreads everything
-      until the structure is gone.</div>
+  <div class="s-gruppe nur-flach layout">
+    <span class="s-label">Layout</span>
+    <div class="s-hinweis s-kopf">The forces that arrange the flat map. On release the map is laid
+      out afresh from its starting point, so earlier settings leave no trace, and the finished
+      layout becomes the map on every device. The sphere has none of these: its layout is final,
+      because a repulsion with no edge to push against just spreads everything until the
+      structure is gone.</div>
+    <span class="s-label">Node repulsion <span class="s-wert" data-lp-wert="abstossung"></span></span>
+    <input type="range" data-lp="abstossung">
+    <div class="s-hinweis">Every node pushes every other away, so clusters spread out. Lower it
+      when the unlike forces below make the map too wide.</div>
+    <span class="s-label">Edge pull <span class="s-wert" data-lp-wert="kantenzug"></span></span>
+    <input type="range" data-lp="kantenzug">
+    <div class="s-hinweis">How hard edges pull similar keywords together. Edges are what drags a
+      keyword in between two areas — weaker ones leave it to the forces below where it settles.</div>
+    <span class="s-label">Early edge pull <span class="s-wert" data-lp-wert="kantenzug_frueh"></span></span>
+    <input type="range" data-lp="kantenzug_frueh">
+    <div class="s-hinweis">Edges pull this many times harder during the first 50 steps. The map
+      starts tightly packed and gets pushed apart twentyfold — stronger edges keep clusters together
+      as units while that happens instead of tearing them up. Fewer keywords end up among unrelated
+      ones, most of all in the crowded centre. ×1 = off.</div>
+    <span class="s-label">Unlike repulsion <span class="s-wert" data-lp-wert="unaehnlich"></span></span>
+    <input type="range" data-lp="unaehnlich">
+    <div class="s-hinweis">Extra push between nearby keywords, growing with how unrelated they
+      are. Sorts the map at large scale; alone it gets lost among hundreds of neighbours and
+      mostly makes the map wider.</div>
+    <span class="s-label">Unlike range <span class="s-wert" data-lp-wert="reichweite"></span></span>
+    <input type="range" data-lp="reichweite">
+    <div class="s-hinweis">Up to which distance that push acts. Matters more than its strength:
+      at 150 px it barely does anything, from about 1.000 px on it saturates.</div>
+    <span class="s-label">Unlike spacing <span class="s-wert" data-lp-wert="abstand"></span></span>
+    <input type="range" data-lp="abstand">
+    <div class="s-hinweis">Minimum gap between unrelated keywords. A constraint per pair rather
+      than a force, so it holds however many others push — the strongest lever against a
+      keyword landing among unrelated ones, without making the map wider.</div>
+    <span class="s-label">Spacing below similarity <span class="s-wert" data-lp-wert="abstand_ab"></span></span>
+    <input type="range" data-lp="abstand_ab">
+    <div class="s-hinweis">Pairs less similar than this keep their distance, in full from 0,3
+      below. Higher = more pairs kept apart.</div>
+    <div class="s-optionen s-zurueck"><button id="layoutReset">Defaults</button></div>
+    <div class="s-bau" id="layoutStatus"></div>
   </div>
   <div class="s-gruppe bau">
     <span class="s-label">Keywords <span class="s-wert" id="knotenWert"></span></span>
